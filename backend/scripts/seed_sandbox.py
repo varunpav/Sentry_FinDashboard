@@ -3,7 +3,7 @@ anomalies) for a demo user, so the dashboard and fraud detection have
 compelling data without waiting on sparse Plaid Sandbox transaction history.
 
 Usage (from backend/, with the venv active and Postgres running):
-    python scripts/seed_sandbox.py [--email demo@fintrack.local] [--password demo12345]
+    python scripts/seed_sandbox.py [--email demo@fintrackapp.dev] [--password demo12345]
 """
 import argparse
 import random
@@ -15,14 +15,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.models.account import Account  # noqa: E402
+from app.models.budget import Budget  # noqa: E402
 from app.models.plaid_item import PlaidItem  # noqa: E402
 from app.models.transaction import Transaction  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.services import fraud_service  # noqa: E402
+from app.services.budget_service import upsert_budget  # noqa: E402
 from app.services.encryption import encrypt_token  # noqa: E402
 from app.services.security import hash_password  # noqa: E402
 
 RNG = random.Random(7)
+
+# Picked to span the Meter's good/warning/critical states against the seeded
+# transaction volume: transportation comes in comfortably under, food & drink
+# sits in the warning band, and general merchandise blows way past its limit
+# because that's the category the injected fraud transactions land in —
+# ties the budget story directly to the fraud alerts.
+DEMO_BUDGETS = [
+    ("TRANSPORTATION", 250.0),
+    ("FOOD_AND_DRINK", 500.0),
+    ("GENERAL_MERCHANDISE", 600.0),
+]
 
 GROCERY_MERCHANTS = ["Trader Joe's", "Whole Foods", "Safeway", "Kroger"]
 RESTAURANT_MERCHANTS = ["Chipotle", "Local Diner", "Sushi House", "Corner Cafe", "Pizza Place"]
@@ -205,6 +218,17 @@ def main() -> None:
         ]
         created_flags = fraud_service.score_transactions_for_user(db, user.id, all_txn_ids)
         print(f"Fraud scoring created {created_flags} new flag(s).")
+
+        existing_budget_categories = {
+            b.category for b in db.query(Budget).filter(Budget.user_id == user.id).all()
+        }
+        seeded_budgets = 0
+        for category, monthly_limit in DEMO_BUDGETS:
+            if category not in existing_budget_categories:
+                upsert_budget(db, user.id, category, monthly_limit)
+                seeded_budgets += 1
+        print(f"Seeded {seeded_budgets} budget(s).")
+
         print(f"\nDemo login -> email: {args.email}  password: {args.password}")
     finally:
         db.close()
