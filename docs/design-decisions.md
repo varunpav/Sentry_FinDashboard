@@ -1,11 +1,17 @@
-# Fraud Detection: Design Decisions
+# Design Decisions
 
-This is a working note on the reasoning behind Sentry's fraud detection
-approach — why unsupervised anomaly detection, why Isolation Forest
-specifically, what each engineered feature is trying to capture, and where the
-current design intentionally stops short.
+Working notes on the reasoning behind Sentry's less-obvious design choices — where the
+tradeoffs are, what was rejected and why, and where the current design intentionally
+stops short. Three areas: fraud detection, recurring charge detection, and the
+notification architecture.
 
-## Why unsupervised, not a trained classifier
+## Fraud Detection
+
+Why unsupervised anomaly detection, why Isolation Forest specifically, what each
+engineered feature is trying to capture, and where the design intentionally stops
+short.
+
+### Why unsupervised, not a trained classifier
 
 Fraud detection is usually framed as classification, but that framing assumes
 something Sentry doesn't have: a labeled dataset of "this transaction was
@@ -32,7 +38,7 @@ labels required, and it's inherently personalized — a $400 restaurant charge
 is unremarkable for one household's baseline and wildly anomalous for
 another's.
 
-## Why Isolation Forest specifically
+### Why Isolation Forest specifically
 
 Within anomaly detection there are several reasonable choices (Local Outlier
 Factor, One-Class SVM, autoencoders). Isolation Forest was picked for a
@@ -63,7 +69,7 @@ combination of practical reasons:
   synchronously inside a request (see `app/services/fraud_service.py`) rather
   than needing an offline batch pipeline.
 
-## Feature engineering — what each feature is trying to catch
+### Feature engineering — what each feature is trying to catch
 
 All features are computed relative to *that user's own history*
 (`app/ml/features.py`), which is what makes the personalization actually
@@ -88,7 +94,7 @@ it fades out as soon as the account has a few months of history, which is
 also why a purely rule-based "new merchant = flag" system would be too noisy
 without the surrounding context these other features provide.
 
-## Per-user model, with a fallback
+### Per-user model, with a fallback
 
 Each user gets their own `IsolationForest`, retrained from that user's full
 feature matrix and persisted with `joblib`
@@ -107,7 +113,7 @@ aren't comparable in any absolute sense across users with different data
 distributions — percentile-within-user is the thing that's actually
 meaningful.
 
-## What feedback-driven retraining would look like (not built)
+### What feedback-driven retraining would look like (not built)
 
 Confirm/dismiss actions on a flag are recorded (`FraudFlag.status`) but
 currently only affect what's displayed — they don't feed back into the model.
@@ -136,3 +142,89 @@ If this went further, a few directions are worth naming:
 None of this is implemented — it's a scope cut, not an oversight — but the
 `status` field and the per-user model boundary already in place are exactly
 what any of these three directions would build on.
+
+## Recurring Charge Detection
+
+Sentry detects subscriptions and recurring bills (`app/services/recurring_service.py`)
+purely by analyzing transaction history — there's no ML model here, and deliberately so.
+
+### Why frequency analysis over history, not the Plaid liabilities product
+
+Plaid exposes a `liabilities` product with real due dates and minimum payments for
+credit/loan accounts. It was considered and rejected for this project specifically:
+the demo runs on `scripts/seed_sandbox.py` synthetic data, not a live Sandbox link, and
+`liabilities` data wouldn't exist for a seeded account — the feature would be invisible
+in the exact context it needs to demo well in. Deriving recurring charges from
+transaction history instead works identically whether the account is seeded or really
+linked, and generalizes to *any* recurring charge (rent, subscriptions, a weekly gas
+fill-up), not just credit/loan liabilities.
+
+### The algorithm
+
+1. **Group by normalized merchant.** Lowercase, strip punctuation, strip trailing
+   digit runs of 2+ (store numbers), collapse whitespace. Groups under 3 occurrences
+   are dropped immediately — that alone rejects one-off purchases and every
+   distinctly-named injected fraud transaction in the seed data.
+2. **Classify cadence from the median gap** between occurrences (weekly, biweekly,
+   monthly, quarterly, annual buckets). The *median*, not the mean, so one skipped
+   cycle doesn't distort the read.
+3. **Gate on regularity**, not just cadence. Median-absolute-deviation of the gaps
+   must fall within a per-cadence tolerance, and — for monthly specifically — the
+   day-of-month must also be stable (real month lengths make raw day-gaps noisy in a
+   way day-of-month isn't).
+4. **Score confidence** as a weighted blend of interval regularity, amount stability,
+   and occurrence count, and use the *most recent* 1–3 charges (not a full-history
+   average) to set the expected amount — so a subscription price increase is reflected
+   rather than averaged away.
+5. **Never delete, just deactivate.** A merchant that stops recurring (cancelled
+   subscription) or falls too far past its predicted next date is marked `inactive`,
+   not removed — the same "don't destroy history" instinct as the fraud flag's
+   `status` field.
+
+### A real false positive, and what it revealed
+
+Running this against the seeded demo data caught a genuine gap in the design, worth
+stating plainly rather than glossing over: **a restaurant chosen at random each week
+from a list of five got flagged as a biweekly recurring charge.** Its actual gaps were
+`[42, 14, 14, 49, 14]` days — three coincidental two-week repeats and two large gaps.
+Median-absolute-deviation is robust to *one* outlier surrounded by a regular cluster,
+but it has a blind spot: with few samples, it can't tell "mostly regular with one skip"
+apart from "a regular-looking cluster plus a couple of wild outliers," because the
+median and MAD both simply land on the cluster and ignore the outliers' *spread*.
+
+The fix adds a second, independent gate: the full range of the gaps (`max − min`)
+can't exceed several multiples of that cadence's tolerance. A single skipped month
+still passes (the range stays proportional to one cycle length); a coincidental
+same-week repeat sitting next to two-month gaps doesn't. Verified against the seeded
+data post-fix: the five real recurring charges (rent, three subscriptions, weekly gas)
+are still detected, and the random-choice merchants are not.
+
+This is left in the codebase as an honest example of iterating against real output
+rather than only against hand-picked test cases — the unit tests in
+`tests/test_recurring.py` encode both the original MAD gate and this range gate as
+separate, explicit checks.
+
+## Notification Architecture
+
+### Why no background scheduler
+
+A locally-run app is off most of the time, which makes an in-process scheduler
+(APScheduler, etc.) mostly theater: it only fires while the process happens to be
+running, adds a background-thread lifecycle to reason about, and is awkward to test.
+Instead, notification evaluation (`notification_service.evaluate_and_send`) is a plain
+function called two ways: automatically at the end of every `/plaid/sync`, and on
+demand via `POST /notifications/run` (exposed as "Run check now" in the UI). Anyone
+who wants true unattended scheduling can point an OS-level cron/Task Scheduler entry
+at that endpoint — zero extra application code, and the endpoint is exactly as testable
+either way.
+
+### Why skipped sends still get logged
+
+`NotificationLog` has a unique constraint on `(user_id, dedup_key)`, and a row is
+written whether the send actually succeeded, was skipped (no `RESEND_API_KEY`
+configured), or failed. The alternative — only logging real sends — would mean adding
+a Resend key later replays every notification that *would* have fired while the key
+was unset, potentially flooding an inbox with months of backlogged budget/bill alerts
+the moment the key is added. Logging "skipped" as handled trades that off deliberately:
+it's a one-line change (`if result != "skipped": db.add(...)`) to flip if the opposite
+behavior is ever preferred.

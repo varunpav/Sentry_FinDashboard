@@ -1,8 +1,9 @@
 # Sentry
 
 A full-stack personal finance dashboard: link a bank account via Plaid, see where your
-money goes, set monthly budgets, and get ML-based fraud alerts on your own spending
-patterns.
+money goes and how your net worth trends, set monthly budgets, catch recurring
+subscriptions and upcoming bills automatically, and get ML-based fraud alerts on your
+own spending patterns — with email notifications you control the granularity of.
 
 Demo login (seeded data, no Plaid credentials needed): **`demo@sentryapp.dev`** /
 **`demo12345`**
@@ -10,13 +11,21 @@ Demo login (seeded data, no Plaid credentials needed): **`demo@sentryapp.dev`** 
 ## What it does
 
 - **Bank linking & sync** — Plaid Link (Sandbox) to connect an account, cursor-based
-  `/transactions/sync` to pull transactions incrementally
+  `/transactions/sync` to pull transactions incrementally, with balances refreshed on
+  every sync (not just at link time)
 - **Spending breakdown** — category and daily-trend charts over any month
+- **Net worth tracking** — daily balance snapshots roll up into an assets-vs-liabilities
+  trend line, classified from Plaid account types
 - **Budgets** — per-category monthly limits with spend-vs-limit tracking
+- **Recurring charges & bill reminders** — detects subscriptions and regular bills
+  purely from transaction history (cadence, amount stability, next due date) — see
+  [`docs/design-decisions.md`](docs/design-decisions.md) for how
 - **Fraud detection** — a per-user, unsupervised anomaly-detection model flags unusual
   transactions with plain-English reasons ("Amount is 6.6x your typical spend here",
   "First transaction at this merchant", "3 a.m. transaction") — see
   [`docs/design-decisions.md`](docs/design-decisions.md) for the full reasoning
+- **Configurable email notifications** — budget-threshold alerts, bill reminders, fraud
+  alerts, and a weekly digest, each independently toggleable, sent via Resend
 - **Auth** — JWT access/refresh tokens, multi-user
 
 ## Architecture
@@ -42,6 +51,10 @@ Demo login (seeded data, no Plaid credentials needed): **`demo@sentryapp.dev`** 
 - **Backend:** FastAPI, SQLAlchemy 2.0, Alembic, Pydantic v2, `plaid-python`
 - **ML:** scikit-learn `IsolationForest` + pandas feature engineering, running inside
   the FastAPI process — no separate ML service
+- **Recurring detection:** pure Python/pandas over transaction history — no ML model,
+  no new dependency (see [`docs/design-decisions.md`](docs/design-decisions.md))
+- **Notifications:** [Resend](https://resend.com) over plain `httpx`, no SDK, no
+  background scheduler — evaluated on sync or on demand (see Setup below)
 - **Database:** PostgreSQL 16 (Docker)
 - **Auth:** JWT (access + refresh), bcrypt password hashing; Plaid access tokens
   encrypted at rest with Fernet
@@ -64,6 +77,17 @@ Full writeup — including why Isolation Forest over alternatives, and what
 feedback-driven retraining would look like if built out — is in
 [`docs/design-decisions.md`](docs/design-decisions.md).
 
+## Recurring charges & bills, in short
+
+No ML here — subscriptions and bills are detected by grouping transactions by
+normalized merchant name, classifying the cadence from the gaps between occurrences
+(weekly/monthly/etc.), and requiring that cadence to actually be regular before calling
+it "recurring." A merchant that stops recurring is marked inactive rather than deleted,
+so a cancelled subscription doesn't just vanish from your history. Full reasoning,
+including a real false-positive this approach produced against the seeded demo data and
+how it's guarded against, is in
+[`docs/design-decisions.md`](docs/design-decisions.md).
+
 ## Setup
 
 ### Prerequisites
@@ -72,6 +96,9 @@ feedback-driven retraining would look like if built out — is in
 - A free [Plaid](https://dashboard.plaid.com) account for Sandbox API keys (only
   needed if you want to link a live Sandbox account — the seeded demo user works
   without it)
+- Optionally, a free [Resend](https://resend.com) API key if you want notifications to
+  actually send email — without one, the app still runs and evaluates notifications
+  normally, they just log as "skipped" instead of sending (see Setup below)
 
 ### 1. Start Postgres
 
@@ -98,6 +125,8 @@ cp .env.example .env
 #     python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 #   - PLAID_CLIENT_ID / PLAID_SECRET: from https://dashboard.plaid.com (Sandbox keys)
 #   - JWT_SECRET_KEY: any long random string
+#   - RESEND_API_KEY: optional, from https://resend.com — leave blank and
+#     notifications still evaluate and log, they just don't send
 
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
@@ -114,12 +143,14 @@ python scripts/seed_sandbox.py
 ```
 
 Generates ~6 months of realistic synthetic transactions plus a few injected
-anomalies, and seeds 3 monthly budgets chosen to land in each of the good/warning/
-over-budget states so the dashboard isn't a blank slate on first look. Prints the
-demo login.
+anomalies, backfills matching daily balance snapshots so the net worth trend isn't
+flat, seeds 3 monthly budgets chosen to land in each of the good/warning/over-budget
+states, runs recurring-charge detection, and creates default notification preferences
+— so nothing on first login is a blank slate. Prints the demo login.
 
-**Run tests:** `pytest` (10 tests: auth, budget aggregation, fraud scoring against
-synthetic fixtures with known injected anomalies).
+**Run tests:** `pytest` (25 tests: auth, budget aggregation, fraud scoring against
+synthetic fixtures with known injected anomalies, net worth classification/rollup,
+recurring-charge detection, and notification dedup).
 
 ### 3. Frontend
 
@@ -139,9 +170,15 @@ Open http://localhost:3000.
    (Sandbox credentials: username `user_good`, password `pass_good`, any institution).
    The demo user already has seeded transactions and doesn't need this step.
 3. Click **Sync transactions** any time to pull new transactions from Plaid — new
-   transactions are automatically scored for fraud.
+   transactions are automatically scored for fraud, balances refresh, and recurring
+   charges + notifications re-evaluate.
 4. Set monthly budgets per category on the **Budgets** page.
-5. Review flagged transactions on the **Alerts** page and confirm or dismiss them.
+5. Review detected subscriptions and upcoming bills on the **Recurring** page; mute
+   any false positive.
+6. Review flagged transactions on the **Alerts** page and confirm or dismiss them.
+7. On **Settings → Notifications**, choose which alerts you want and at what
+   granularity, then use **Run check now** to evaluate immediately instead of waiting
+   for the next sync.
 
 ## Known limitations & scope cuts
 
@@ -149,11 +186,19 @@ These were deliberate cuts to keep scope tight, not gaps I missed:
 
 - **Plaid Sandbox only** — no Production access; real bank data was never the goal
 - **No Plaid webhooks** — sync is a manual "Sync" button, not push-triggered
-- **No notifications** — fraud alerts only surface in-app, no email/push
 - **Not deployed** — runs locally only; no hosting/CI pipeline
-- **No feedback-driven retraining** — confirming/dismissing a fraud flag is recorded
-  (`FraudFlag.status`) but doesn't yet feed back into the model; see
+- **No feedback-driven fraud retraining** — confirming/dismissing a fraud flag is
+  recorded (`FraudFlag.status`) but doesn't yet feed back into the model; see
   `docs/design-decisions.md` for what that would look like
+- **No background scheduler for notifications** — evaluation runs on sync or via the
+  explicit `/notifications/run` endpoint, not on a timer; see `docs/design-decisions.md`
+  for why that's a deliberate choice, not an oversight
+- **Resend's shared sender only delivers to your own Resend account address** —
+  sending to arbitrary recipients needs a verified domain, out of scope for a
+  single-user POC
+- **No savings goals, no CSV/PDF export, no manual transaction-category override, no
+  transaction search, no month-over-month spend comparison** — all scoped out to keep
+  this pass focused on net worth, recurring detection, and notifications
 
 ## Related
 

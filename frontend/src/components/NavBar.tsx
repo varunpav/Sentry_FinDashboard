@@ -8,7 +8,9 @@ const LINKS = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/transactions", label: "Transactions" },
   { href: "/budgets", label: "Budgets" },
+  { href: "/recurring", label: "Recurring" },
   { href: "/alerts", label: "Alerts" },
+  { href: "/settings/notifications", label: "Settings" },
 ];
 
 export function NavBar() {

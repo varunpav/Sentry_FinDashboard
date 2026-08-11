@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime as dt
 from typing import NoReturn
 
@@ -18,9 +19,10 @@ from app.schemas.plaid import (
     ExchangeRequest,
     ExchangeResponse,
     LinkTokenResponse,
+    RefreshBalancesResponse,
     SyncResponse,
 )
-from app.services import plaid_service
+from app.services import balance_service, notification_service, plaid_service, recurring_service
 from app.services.encryption import decrypt_token, encrypt_token
 
 router = APIRouter(prefix="/plaid", tags=["plaid"])
@@ -189,11 +191,28 @@ def _run_sync_for_item(db: Session, item: PlaidItem) -> SyncResponse:
             db, item.user_id, new_transaction_ids
         )
 
+    if new_transaction_ids or result["removed"]:
+        recurring_service.detect_and_persist(db, item.user_id)
+
+    # Best-effort: a demo/seeded item carries a placeholder access token that Plaid
+    # will reject, so a balance refresh failure here must not fail the whole sync.
+    try:
+        balances_refreshed = balance_service.refresh_balances_for_item(db, item)
+    except (OpenApiException, InvalidToken):
+        balances_refreshed = 0
+    balance_service.snapshot_balances_for_user(db, item.user_id)
+
+    try:
+        notification_service.evaluate_and_send(db, item.user)
+    except Exception:  # noqa: BLE001 - notification failures must never break a sync
+        logging.getLogger(__name__).warning("Notification evaluation failed", exc_info=True)
+
     return SyncResponse(
         added=len(result["added"]),
         modified=len(result["modified"]),
         removed=len(result["removed"]),
         new_fraud_flags=new_fraud_flags,
+        balances_refreshed=balances_refreshed,
     )
 
 
@@ -223,3 +242,22 @@ def list_accounts(
         resp.institution_name = acct.item.institution_name
         results.append(resp)
     return results
+
+
+@router.post("/refresh-balances", response_model=RefreshBalancesResponse)
+def refresh_balances(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> RefreshBalancesResponse:
+    items = db.query(PlaidItem).filter(PlaidItem.user_id == current_user.id).all()
+    if not items:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No linked bank accounts")
+
+    accounts_updated = 0
+    for item in items:
+        try:
+            accounts_updated += balance_service.refresh_balances_for_item(db, item)
+        except (OpenApiException, InvalidToken) as exc:
+            _raise_plaid_unavailable(exc)
+    balance_service.snapshot_balances_for_user(db, current_user.id)
+
+    return RefreshBalancesResponse(accounts_updated=accounts_updated)

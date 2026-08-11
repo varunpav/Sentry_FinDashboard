@@ -20,6 +20,7 @@ class SyncResponse(BaseModel):
     modified: int
     removed: int
     new_fraud_flags: int
+    balances_refreshed: int = 0
 
 
 class AccountResponse(BaseModel):
@@ -29,6 +30,12 @@ class AccountResponse(BaseModel):
     subtype: str | None
     mask: str | None
     current_balance: float | None
+    available_balance: float | None = None
+    credit_limit: float | None = None
     institution_name: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class RefreshBalancesResponse(BaseModel):
+    accounts_updated: int

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
 
     models_dir: str = "models"
 
+    resend_api_key: str = ""
+    notification_from_email: str = "onboarding@resend.dev"
+
 
 @lru_cache
 def get_settings() -> Settings:

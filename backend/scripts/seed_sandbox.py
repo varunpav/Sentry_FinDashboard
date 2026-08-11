@@ -15,11 +15,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.models.account import Account  # noqa: E402
+from app.models.balance_snapshot import AccountBalanceSnapshot  # noqa: E402
 from app.models.budget import Budget  # noqa: E402
 from app.models.plaid_item import PlaidItem  # noqa: E402
 from app.models.transaction import Transaction  # noqa: E402
 from app.models.user import User  # noqa: E402
-from app.services import fraud_service  # noqa: E402
+from app.services import fraud_service, notification_service, recurring_service  # noqa: E402
 from app.services.budget_service import upsert_budget  # noqa: E402
 from app.services.encryption import encrypt_token  # noqa: E402
 from app.services.security import hash_password  # noqa: E402
@@ -74,11 +75,17 @@ def generate_transactions(account_id: int, months: int = 6) -> list[Transaction]
         return f"seed-{account_id}-{counter}"
 
     day = start
+    friday_counter = 0
     while day <= now:
-        # Biweekly salary deposit (negative = money in)
-        if day.weekday() == 4 and (day - start).days % 14 == 0:
-            dt = day.replace(hour=9, minute=0)
-            txns.append(_tx(account_id, next_id(), -2800.0, dt, "Employer Payroll", "INCOME"))
+        # Biweekly salary deposit (negative = money in). Counts Fridays rather than
+        # gating on days-since-start, since that offset only lands on a Friday if
+        # `start` itself happened to be one -- otherwise the condition never fires
+        # and no income gets generated at all.
+        if day.weekday() == 4:
+            if friday_counter % 2 == 0:
+                dt = day.replace(hour=9, minute=0)
+                txns.append(_tx(account_id, next_id(), -2800.0, dt, "Employer Payroll", "INCOME"))
+            friday_counter += 1
 
         # Rent on the 1st of each month
         if day.day == 1:
@@ -151,6 +158,39 @@ def generate_transactions(account_id: int, months: int = 6) -> list[Transaction]
     )
 
     return txns
+
+
+def generate_balance_snapshots(
+    account_id: int, txns: list[Transaction], start: datetime, now: datetime, ending_balance: float
+) -> list[AccountBalanceSnapshot]:
+    """Back-solves a starting balance from the known ending balance and each day's net
+    transaction flow, then walks forward day by day so the snapshot history ends exactly
+    at the account's current balance and trends realistically (payroll bumps, gradual
+    drawdown) rather than sitting flat."""
+    net_flow_by_day: dict = {}
+    for t in txns:
+        net_flow_by_day[t.date] = net_flow_by_day.get(t.date, 0.0) - t.amount
+
+    total_net_flow = sum(net_flow_by_day.values())
+    running_balance = ending_balance - total_net_flow
+
+    snapshots: list[AccountBalanceSnapshot] = []
+    day = start.date()
+    end_date = now.date()
+    while day <= end_date:
+        running_balance += net_flow_by_day.get(day, 0.0)
+        snapshots.append(
+            AccountBalanceSnapshot(
+                account_id=account_id,
+                date=day,
+                current_balance=round(running_balance, 2),
+                available_balance=round(running_balance, 2),
+                credit_limit=None,
+            )
+        )
+        day += timedelta(days=1)
+
+    return snapshots
 
 
 def main() -> None:
@@ -228,6 +268,30 @@ def main() -> None:
                 upsert_budget(db, user.id, category, monthly_limit)
                 seeded_budgets += 1
         print(f"Seeded {seeded_budgets} budget(s).")
+
+        existing_snapshots = (
+            db.query(AccountBalanceSnapshot).filter(AccountBalanceSnapshot.account_id == account.id).count()
+        )
+        if existing_snapshots > 0:
+            print(f"Account already has {existing_snapshots} balance snapshots; skipping generation.")
+        else:
+            now = datetime.now(timezone.utc)
+            start = now - timedelta(days=30 * args.months)
+            all_txns = db.query(Transaction).filter(Transaction.account_id == account.id).all()
+            snapshots = generate_balance_snapshots(account.id, all_txns, start, now, account.current_balance)
+            db.add_all(snapshots)
+            db.commit()
+            print(f"Inserted {len(snapshots)} balance snapshots.")
+
+        notification_service.get_or_create_preferences(db, user.id)
+        print("Ensured default notification preferences.")
+
+        recurring_result = recurring_service.detect_and_persist(db, user.id)
+        print(
+            f"Recurring detection: {recurring_result['active']} active, "
+            f"{recurring_result['inactive']} inactive, "
+            f"{recurring_result['total_candidates']} merchant group(s) considered."
+        )
 
         print(f"\nDemo login -> email: {args.email}  password: {args.password}")
     finally:

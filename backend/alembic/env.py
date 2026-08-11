@@ -5,7 +5,18 @@ from sqlalchemy import engine_from_config, pool
 
 from app.config import get_settings
 from app.database import Base
-from app.models import Account, Budget, FraudFlag, PlaidItem, Transaction, User  # noqa: F401
+from app.models import (  # noqa: F401
+    Account,
+    AccountBalanceSnapshot,
+    Budget,
+    FraudFlag,
+    NotificationLog,
+    NotificationPreferences,
+    PlaidItem,
+    RecurringSeries,
+    Transaction,
+    User,
+)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)

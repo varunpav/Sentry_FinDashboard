@@ -134,6 +134,8 @@ export interface AccountSummary {
   subtype: string | null;
   mask: string | null;
   current_balance: number | null;
+  available_balance: number | null;
+  credit_limit: number | null;
   institution_name: string | null;
 }
 
@@ -185,6 +187,42 @@ export interface SpendingSummary {
   daily_spend: DailySpendPoint[];
 }
 
+export interface NetWorthSummary {
+  assets: number;
+  liabilities: number;
+  net_worth: number;
+  change_30d: number | null;
+  change_30d_pct: number | null;
+}
+
+export interface NetWorthPoint {
+  date: string;
+  assets: number;
+  liabilities: number;
+  net_worth: number;
+}
+
+export interface RecurringSeries {
+  id: number;
+  display_name: string;
+  cadence: "weekly" | "biweekly" | "monthly" | "quarterly" | "annual";
+  median_gap_days: number;
+  expected_amount: number;
+  amount_stability: "fixed" | "variable";
+  occurrences: number;
+  first_seen: string;
+  last_seen: string;
+  next_due_date: string;
+  confidence: number;
+  status: "active" | "inactive";
+  is_muted: boolean;
+}
+
+export interface RecurringListResponse {
+  series: RecurringSeries[];
+  total_monthly_cost: number;
+}
+
 export interface FraudFlag {
   id: number;
   transaction_id: number;
@@ -217,11 +255,18 @@ export const plaidApi = {
       { method: "POST", body: { public_token: publicToken } }
     ),
   sync: () =>
-    apiFetch<Array<{ added: number; modified: number; removed: number; new_fraud_flags: number }>>(
-      "/plaid/sync",
-      { method: "POST" }
-    ),
+    apiFetch<
+      Array<{
+        added: number;
+        modified: number;
+        removed: number;
+        new_fraud_flags: number;
+        balances_refreshed: number;
+      }>
+    >("/plaid/sync", { method: "POST" }),
   listAccounts: () => apiFetch<AccountSummary[]>("/plaid/accounts"),
+  refreshBalances: () =>
+    apiFetch<{ accounts_updated: number }>("/plaid/refresh-balances", { method: "POST" }),
 };
 
 // ---- Transactions ----
@@ -257,6 +302,62 @@ export const budgetsApi = {
     apiFetch<Budget>("/budgets", { method: "PUT", body: { category, monthly_limit: monthlyLimit } }),
   spendingSummary: (month?: string) =>
     apiFetch<SpendingSummary>("/spending/summary", { query: { month } }),
+};
+
+// ---- Net worth ----
+
+export const networthApi = {
+  summary: () => apiFetch<NetWorthSummary>("/networth/summary"),
+  history: (months?: number) => apiFetch<{ points: NetWorthPoint[] }>("/networth/history", { query: { months } }),
+};
+
+export interface NotificationPreferences {
+  budget_alerts_enabled: boolean;
+  budget_threshold_pct: number;
+  budget_alert_at_100: boolean;
+  bill_reminders_enabled: boolean;
+  bill_lead_days: number;
+  fraud_alerts_enabled: boolean;
+  weekly_digest_enabled: boolean;
+  weekly_digest_day: number;
+  email_override: string | null;
+}
+
+export interface NotificationLogEntry {
+  id: number;
+  type: "budget" | "bill" | "fraud" | "digest";
+  dedup_key: string;
+  sent_at: string;
+  status: "sent" | "skipped" | "failed";
+  detail: string | null;
+}
+
+export interface NotificationRunResult {
+  budget: number;
+  bill: number;
+  fraud: number;
+  digest: number;
+  resend_configured: boolean;
+}
+
+// ---- Notifications ----
+
+export const notificationsApi = {
+  getPreferences: () => apiFetch<NotificationPreferences>("/notifications/preferences"),
+  updatePreferences: (prefs: NotificationPreferences) =>
+    apiFetch<NotificationPreferences>("/notifications/preferences", { method: "PUT", body: prefs }),
+  log: (limit?: number) => apiFetch<NotificationLogEntry[]>("/notifications/log", { query: { limit } }),
+  run: () => apiFetch<NotificationRunResult>("/notifications/run", { method: "POST" }),
+};
+
+// ---- Recurring ----
+
+export const recurringApi = {
+  list: () => apiFetch<RecurringListResponse>("/recurring"),
+  upcoming: (days?: number) => apiFetch<RecurringSeries[]>("/recurring/upcoming", { query: { days } }),
+  refresh: () => apiFetch<{ active: number; inactive: number; total_candidates: number }>("/recurring/refresh", { method: "POST" }),
+  setMuted: (seriesId: number, isMuted: boolean) =>
+    apiFetch<RecurringSeries>(`/recurring/${seriesId}/mute`, { method: "POST", body: { is_muted: isMuted } }),
 };
 
 // ---- Fraud ----
