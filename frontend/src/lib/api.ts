@@ -1,7 +1,7 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
-const ACCESS_TOKEN_KEY = "fintrack_access_token";
-const REFRESH_TOKEN_KEY = "fintrack_refresh_token";
+const ACCESS_TOKEN_KEY = "sentry_access_token";
+const REFRESH_TOKEN_KEY = "sentry_refresh_token";
 
 export class ApiError extends Error {
   status: number;

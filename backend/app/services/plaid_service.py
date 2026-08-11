@@ -36,7 +36,7 @@ def create_link_token(user_id: int) -> str:
     client = get_plaid_client()
     request = LinkTokenCreateRequest(
         products=[Products("transactions")],
-        client_name="FinTrack",
+        client_name="Sentry",
         country_codes=[CountryCode("US")],
         language="en",
         user=LinkTokenCreateRequestUser(client_user_id=str(user_id)),

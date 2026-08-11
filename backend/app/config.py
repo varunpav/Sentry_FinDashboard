@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    database_url: str = "postgresql+psycopg2://fintrack:fintrack@localhost:5432/fintrack"
+    database_url: str = "postgresql+psycopg2://sentry:sentry@localhost:5432/sentry"
 
     jwt_secret_key: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"

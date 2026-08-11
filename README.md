@@ -1,10 +1,10 @@
-# FinTrack
+# Sentry
 
 A full-stack personal finance dashboard: link a bank account via Plaid, see where your
 money goes, set monthly budgets, and get ML-based fraud alerts on your own spending
 patterns.
 
-Demo login (seeded data, no Plaid credentials needed): **`demo@fintrackapp.dev`** /
+Demo login (seeded data, no Plaid credentials needed): **`demo@sentryapp.dev`** /
 **`demo12345`**
 
 ## What it does
@@ -81,7 +81,8 @@ docker compose up -d
 
 Runs Postgres on `localhost:5433` (remapped from the default 5432 in case you already
 have a local Postgres instance running there — check `docker-compose.yml` and
-`backend/.env` if you need to change it).
+`backend/.env` if you need to change it). Uses a named volume (`sentry_pg_data`) and
+a `sentry`/`sentry` user/db, both defined in `docker-compose.yml`.
 
 ### 2. Backend
 

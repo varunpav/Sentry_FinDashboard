@@ -3,7 +3,7 @@ anomalies) for a demo user, so the dashboard and fraud detection have
 compelling data without waiting on sparse Plaid Sandbox transaction history.
 
 Usage (from backend/, with the venv active and Postgres running):
-    python scripts/seed_sandbox.py [--email demo@fintrackapp.dev] [--password demo12345]
+    python scripts/seed_sandbox.py [--email demo@sentryapp.dev] [--password demo12345]
 """
 import argparse
 import random
@@ -155,7 +155,7 @@ def generate_transactions(account_id: int, months: int = 6) -> list[Transaction]
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--email", default="demo@fintrackapp.dev")
+    parser.add_argument("--email", default="demo@sentryapp.dev")
     parser.add_argument("--password", default="demo12345")
     parser.add_argument("--months", type=int, default=6)
     args = parser.parse_args()

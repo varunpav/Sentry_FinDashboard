@@ -6,7 +6,7 @@ from app.routers import auth, budgets, fraud, plaid, transactions
 
 settings = get_settings()
 
-app = FastAPI(title="FinTrack API", version="1.0.0")
+app = FastAPI(title="Sentry API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,

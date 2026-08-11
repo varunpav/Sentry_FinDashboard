@@ -4,7 +4,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-semibold" style={{ color: "var(--text-primary)" }}>
-            FinTrack
+            Sentry
           </h1>
           <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
             Know where your money goes.

@@ -28,7 +28,7 @@ export function NavBar() {
     >
       <div className="flex items-center gap-8">
         <span className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-          FinTrack
+          Sentry
         </span>
         <nav className="flex gap-1">
           {LINKS.map((link) => {

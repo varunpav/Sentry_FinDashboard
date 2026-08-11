@@ -1,6 +1,6 @@
 # Fraud Detection: Design Decisions
 
-This is a working note on the reasoning behind FinTrack's fraud detection
+This is a working note on the reasoning behind Sentry's fraud detection
 approach — why unsupervised anomaly detection, why Isolation Forest
 specifically, what each engineered feature is trying to capture, and where the
 current design intentionally stops short.
@@ -8,7 +8,7 @@ current design intentionally stops short.
 ## Why unsupervised, not a trained classifier
 
 Fraud detection is usually framed as classification, but that framing assumes
-something FinTrack doesn't have: a labeled dataset of "this transaction was
+something Sentry doesn't have: a labeled dataset of "this transaction was
 fraud" for *this specific user*. A handful of options exist and all fail for a
 personal-finance product at this scale:
 
@@ -25,7 +25,7 @@ personal-finance product at this scale:
   complement, but they don't adapt to an individual's baseline and need manual
   tuning per rule.
 
-What FinTrack actually has, per user, is a clean history of *normal* spending.
+What Sentry actually has, per user, is a clean history of *normal* spending.
 That's exactly the setup unsupervised anomaly detection wants: model what
 "normal" looks like for this one account, then flag whatever doesn't fit. No
 labels required, and it's inherently personalized — a $400 restaurant charge

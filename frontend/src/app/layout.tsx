@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FinTrack",
+  title: "Sentry",
   description: "Personal finance dashboard with budgets and fraud detection",
 };
 
