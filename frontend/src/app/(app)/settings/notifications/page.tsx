@@ -4,10 +4,23 @@ import { useCallback, useEffect, useState } from "react";
 import {
   type NotificationLogEntry,
   type NotificationPreferences,
+  type SyncPreferences,
   notificationsApi,
+  syncApi,
 } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
+import { IntervalSlider } from "@/components/ui/IntervalSlider";
 import { Toggle } from "@/components/ui/Toggle";
+
+function formatWhen(iso: string | null): string {
+  if (!iso) return "never";
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 const DAY_LABELS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -42,15 +55,21 @@ export default function NotificationSettingsPage() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [runMessage, setRunMessage] = useState<string | null>(null);
 
+  const [syncPrefs, setSyncPrefs] = useState<SyncPreferences | null>(null);
+  const [syncSaving, setSyncSaving] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [prefsRes, logRes] = await Promise.all([
+      const [prefsRes, logRes, syncPrefsRes] = await Promise.all([
         notificationsApi.getPreferences(),
         notificationsApi.log(20),
+        syncApi.getPreferences(),
       ]);
       setPrefs(prefsRes);
       setLog(logRes);
+      setSyncPrefs(syncPrefsRes);
     } finally {
       setLoading(false);
     }
@@ -99,7 +118,22 @@ export default function NotificationSettingsPage() {
     }
   }
 
-  if (loading || !prefs) {
+  async function handleSyncSave() {
+    if (!syncPrefs) return;
+    setSyncSaving(true);
+    setSyncMessage(null);
+    try {
+      const updated = await syncApi.updatePreferences(syncPrefs.auto_sync_enabled, syncPrefs.interval_hours);
+      setSyncPrefs(updated);
+      setSyncMessage("Saved.");
+    } catch {
+      setSyncMessage("Failed to save.");
+    } finally {
+      setSyncSaving(false);
+    }
+  }
+
+  if (loading || !prefs || !syncPrefs) {
     return <p style={{ color: "var(--text-muted)" }}>Loading notification settings…</p>;
   }
 
@@ -123,12 +157,56 @@ export default function NotificationSettingsPage() {
 
       <Card>
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          Notifications are evaluated whenever you sync transactions, or on demand with{" "}
-          &ldquo;Run check now&rdquo; above — there is no background scheduler. Emails are sent via{" "}
+          <strong style={{ color: "var(--text-secondary)" }}>Alerts only fire after a sync</strong> —
+          notifications are evaluated at the end of each sync, so how often you sync sets the floor
+          on how quickly any alert can reach you. Turn on automatic sync below for a background
+          check on your chosen interval, or use &ldquo;Run check now&rdquo; above for an immediate
+          one-off. Emails are sent via{" "}
           <a href="https://resend.com" target="_blank" rel="noreferrer" style={{ color: "var(--series-1)" }}>
             Resend
           </a>
           . Without a configured API key, checks still run and log normally, they just don&apos;t send.
+        </p>
+      </Card>
+
+      <Card title="Automatic sync">
+        <div className="flex flex-col divide-y" style={{ borderColor: "var(--gridline)" }}>
+          <Toggle
+            label="Sync automatically"
+            description="Sync linked accounts in the background on the interval below, even while you're not using the app."
+            checked={syncPrefs.auto_sync_enabled}
+            onChange={(v) => setSyncPrefs((prev) => (prev ? { ...prev, auto_sync_enabled: v } : prev))}
+          />
+          {syncPrefs.auto_sync_enabled && (
+            <div className="flex flex-col gap-4 py-4 pl-4">
+              <IntervalSlider
+                hours={syncPrefs.interval_hours}
+                onChange={(hours) => setSyncPrefs((prev) => (prev ? { ...prev, interval_hours: hours } : prev))}
+              />
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Auto-sync only runs while the app's backend is running — a 2-day interval on a
+                machine that's been off will catch up on the next check, not run precisely on
+                schedule.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            onClick={handleSyncSave}
+            disabled={syncSaving}
+            className="rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            style={{ background: "var(--series-1)" }}
+          >
+            {syncSaving ? "Saving…" : "Save sync settings"}
+          </button>
+          {syncMessage && <span className="text-sm" style={{ color: "var(--text-secondary)" }}>{syncMessage}</span>}
+        </div>
+
+        <p className="mt-4 text-xs" style={{ color: "var(--text-muted)" }}>
+          Last synced: {formatWhen(syncPrefs.last_auto_sync_at)}
+          {syncPrefs.last_auto_sync_status && ` (${syncPrefs.last_auto_sync_status})`}
         </p>
       </Card>
 

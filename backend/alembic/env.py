@@ -15,6 +15,7 @@ from app.models import (  # noqa: F401
     PlaidItem,
     RecurringSeries,
     SavingsGoal,
+    SyncPreference,
     Transaction,
     User,
 )

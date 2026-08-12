@@ -21,7 +21,7 @@ from app.models.plaid_item import PlaidItem  # noqa: E402
 from app.models.savings_goal import SavingsGoal  # noqa: E402
 from app.models.transaction import Transaction  # noqa: E402
 from app.models.user import User  # noqa: E402
-from app.services import fraud_service, notification_service, recurring_service  # noqa: E402
+from app.services import autosync_service, fraud_service, notification_service, recurring_service  # noqa: E402
 from app.services.budget_service import upsert_budget  # noqa: E402
 from app.services.encryption import encrypt_token  # noqa: E402
 from app.services.security import hash_password  # noqa: E402
@@ -345,6 +345,10 @@ def main() -> None:
         notification_service.get_or_create_preferences(db, user.id)
         print("Ensured default notification preferences.")
 
+        # Off by default -- see docs/design-decisions.md for why.
+        autosync_service.get_or_create_preferences(db, user.id)
+        print("Ensured default sync preferences (auto-sync off).")
+
         existing_goal_names = {g.name for g in db.query(SavingsGoal).filter(SavingsGoal.user_id == user.id).all()}
         seeded_goals = 0
         for name, target_amount, current_amount in DEMO_GOALS:
@@ -366,24 +370,34 @@ def main() -> None:
 
         # Demo the category-override feature on a TRAVEL transaction specifically --
         # neither TRAVEL nor ENTERTAINMENT has a seeded budget, so this can't disturb
-        # the good/warning/critical budget spread tuned above.
-        override_candidate = (
+        # the good/warning/critical budget spread tuned above. Idempotency guard: only
+        # ever set one, otherwise re-running this script keeps overriding a new
+        # transaction each time instead of being a no-op after the first run.
+        existing_override_count = (
             db.query(Transaction)
-            .filter(
-                Transaction.account_id == account.id,
-                Transaction.category_primary == "TRAVEL",
-                Transaction.category_override.is_(None),
-            )
-            .order_by(Transaction.date.desc())
-            .first()
+            .filter(Transaction.account_id == account.id, Transaction.category_override.isnot(None))
+            .count()
         )
-        if override_candidate is not None:
-            override_candidate.category_override = "ENTERTAINMENT"
-            db.commit()
-            print(
-                f"Set a demo category override on transaction {override_candidate.id} "
-                f"({override_candidate.merchant_name})."
+        if existing_override_count > 0:
+            print(f"Account already has {existing_override_count} category override(s); skipping.")
+        else:
+            override_candidate = (
+                db.query(Transaction)
+                .filter(
+                    Transaction.account_id == account.id,
+                    Transaction.category_primary == "TRAVEL",
+                    Transaction.category_override.is_(None),
+                )
+                .order_by(Transaction.date.desc())
+                .first()
             )
+            if override_candidate is not None:
+                override_candidate.category_override = "ENTERTAINMENT"
+                db.commit()
+                print(
+                    f"Set a demo category override on transaction {override_candidate.id} "
+                    f"({override_candidate.merchant_name})."
+                )
 
         recurring_result = recurring_service.detect_and_persist(db, user.id)
         print(

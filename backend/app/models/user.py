@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.models.notification import NotificationLog, NotificationPreferences
     from app.models.recurring_series import RecurringSeries
     from app.models.savings_goal import SavingsGoal
+    from app.models.sync_preference import SyncPreference
 
 
 class User(Base):
@@ -41,4 +42,7 @@ class User(Base):
     )
     goals: Mapped[list["SavingsGoal"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+    sync_preference: Mapped[Optional["SyncPreference"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
     )

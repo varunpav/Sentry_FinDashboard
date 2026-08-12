@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     notification_from_email: str = "onboarding@resend.dev"
 
+    # Off in tests (see conftest.py) so pytest never starts a live background thread.
+    scheduler_enabled: bool = True
+    scheduler_tick_minutes: int = 15
+
 
 @lru_cache
 def get_settings() -> Settings:

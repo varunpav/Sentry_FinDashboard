@@ -2,8 +2,8 @@
 
 Working notes on the reasoning behind Sentry's less-obvious design choices — where the
 tradeoffs are, what was rejected and why, and where the current design intentionally
-stops short. Four areas: fraud detection, recurring charge detection, the notification
-architecture, and manual category overrides.
+stops short. Five areas: fraud detection, recurring charge detection, the notification
+architecture, manual category overrides, and automatic sync.
 
 ## Fraud Detection
 
@@ -206,17 +206,25 @@ separate, explicit checks.
 
 ## Notification Architecture
 
-### Why no background scheduler
+### Why notifications alone didn't need a scheduler — and why sync eventually did
 
-A locally-run app is off most of the time, which makes an in-process scheduler
-(APScheduler, etc.) mostly theater: it only fires while the process happens to be
-running, adds a background-thread lifecycle to reason about, and is awkward to test.
-Instead, notification evaluation (`notification_service.evaluate_and_send`) is a plain
-function called two ways: automatically at the end of every `/plaid/sync`, and on
-demand via `POST /notifications/run` (exposed as "Run check now" in the UI). Anyone
-who wants true unattended scheduling can point an OS-level cron/Task Scheduler entry
-at that endpoint — zero extra application code, and the endpoint is exactly as testable
-either way.
+This section originally argued against a background scheduler at all: a locally-run
+app is off most of the time, which makes an in-process scheduler mostly theater, adds
+a background-thread lifecycle to reason about, and is awkward to test. Notification
+evaluation (`notification_service.evaluate_and_send`) stayed a plain function called
+two ways: automatically at the end of every `/plaid/sync`, and on demand via
+`POST /notifications/run`.
+
+That reasoning was correct for notifications specifically, and it's still true today —
+notifications still have no scheduler of their own, they ride on whatever sync just
+ran. But it doesn't extend to *sync itself* once sync becomes something a user can ask
+to happen automatically. A 1-hour auto-sync interval is exactly the case the original
+argument doesn't cover: without something owning the clock, "automatic" would only
+ever mean "while a browser tab happens to be open," which quietly defeats the point of
+offering an interval shorter than a user's typical session. See "Automatic Sync" below
+for what changed and why. The "point an OS-level cron entry at an endpoint" escape
+hatch is still there too, now via `POST /sync/auto`, for anyone who'd rather not run a
+background thread at all.
 
 ### Why skipped sends still get logged
 
@@ -228,6 +236,74 @@ was unset, potentially flooding an inbox with months of backlogged budget/bill a
 the moment the key is added. Logging "skipped" as handled trades that off deliberately:
 it's a one-line change (`if result != "skipped": db.add(...)`) to flip if the opposite
 behavior is ever preferred.
+
+## Automatic Sync
+
+### Extracting sync logic before it could be scheduled
+
+`app/routers/plaid.py::_run_sync_for_item` raised `HTTPException(502)` directly on a
+Plaid or token failure — reasonable for a request handler, unusable from a scheduler
+tick, which has no HTTP response to raise into. Worse, the seeded demo item
+deliberately carries a placeholder access token that Plaid will always reject
+(see the fraud-detection seed data notes above for the same "honest artifact, not a
+bug" spirit) — so a scheduler calling the sync logic as it stood would fail on that
+item every single tick.
+
+The fix was mechanical rather than clever: the entire body of `_run_sync_for_item`
+moved into `app/services/sync_service.py` unchanged, with its one Plaid-failure
+`raise HTTPException(...)` swapped for `raise SyncError(...)` — a plain exception with
+no HTTP coupling. `plaid.py`'s version is now four lines: call `sync_service.sync_item`,
+catch `SyncError`, re-raise as the same 502 as before. `/plaid/sync` and
+`/plaid/exchange` are behaviorally unchanged; `autosync_service.py` can now call the
+same sync logic from a background thread and handle the failure as data instead of an
+HTTP exception.
+
+### One recurring tick, not one job per user
+
+The scheduler (APScheduler, `app/main.py`'s `lifespan` handler) runs exactly one job:
+every 15 minutes, ask "who's due?" (`autosync_service.run_all_due`) and sync whoever
+is. The alternative — scheduling a separate per-user job at each user's chosen
+interval — was rejected because it means the scheduler's in-memory job list has to
+stay in sync with whatever's in the database: change your interval, and either the
+running job is stale until some reschedule logic fires, or you're now writing that
+reschedule logic. A single tick that reads `SyncPreference` fresh each time has no
+state to keep in sync — changing your interval in the settings page takes effect on
+the very next tick, and the "if it's due" logic (`autosync_service.is_due`) is a pure
+function with no relationship to how the tick itself is scheduled, so it's trivially
+unit-testable without touching APScheduler at all.
+
+### Failure isolation, at two levels
+
+A single bad item or user must never take down a whole tick. `run_for_user` catches
+`SyncError` **per item**, so if a user has two linked accounts and one has a bad token
+(exactly the seeded demo user's situation), the other still syncs — verified live
+against real Plaid Sandbox credentials: the demo item fails with
+`INVALID_ACCESS_TOKEN`, gets recorded as `{"ok": false, "detail": "..."}`, and the run
+still completes with a `partial` or `failed` status rather than raising. `run_all_due`
+does the same thing one level up, catching per **user**, so one user's exception can't
+stop the tick from reaching everyone else. Both levels are covered directly in
+`tests/test_autosync.py` by monkeypatching `sync_service.sync_item` to fail and
+asserting the batch still completes.
+
+### Why auto-sync defaults to off
+
+Turning it on by default would mean the seeded demo user starts failing a sync
+attempt on every tick from the moment anyone clones the repo and runs the seed
+script — a confusing first impression for a feature that works correctly (it degrades
+gracefully, logs a `failed` status, doesn't crash anything) but has genuinely nothing
+useful to *do* against a placeholder token. Anyone who imports a real Plaid key,
+Sandbox or Production, gets the full experience — auto-sync and the notifications
+downstream of it both work end-to-end — they just have to opt in once.
+
+### The frontend nudge is a convenience, not the mechanism
+
+`(app)/layout.tsx` calls `POST /sync/auto` once on mount and every 5 minutes while a
+tab is open. This is deliberately *not* what makes auto-sync "automatic" — the
+background scheduler already covers that, tab open or not. The nudge exists purely so
+that opening the app after being away doesn't show stale data for up to
+`scheduler_tick_minutes`; it's a no-op tick whenever nothing is due, and its failures
+are swallowed silently (`.catch(() => {})`) since a background refresh attempt is not
+something that should ever interrupt or alarm someone using the app.
 
 ## Manual Category Override
 

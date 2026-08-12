@@ -2,6 +2,9 @@ import os
 
 os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "kQ8f3n1yZk8v3nq2C9c1h1s5b9m6h9y0N3x8f2a9k7Q=")
 os.environ.setdefault("DATABASE_URL", "sqlite://")
+# Belt-and-braces: TestClient(app) without a `with` block never triggers the lifespan
+# handler anyway, but this guarantees a live scheduler thread can never start in tests.
+os.environ.setdefault("SCHEDULER_ENABLED", "false")
 
 import pytest
 from fastapi.testclient import TestClient

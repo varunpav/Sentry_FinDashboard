@@ -424,6 +424,41 @@ export const networthApi = {
   history: (months?: number) => apiFetch<{ points: NetWorthPoint[] }>("/networth/history", { query: { months } }),
 };
 
+export interface SyncPreferences {
+  auto_sync_enabled: boolean;
+  interval_hours: number;
+  last_auto_sync_at: string | null;
+  last_auto_sync_status: "ok" | "failed" | "partial" | null;
+  last_auto_sync_detail: string | null;
+}
+
+export interface AutoSyncItemResult {
+  item_id: number;
+  ok: boolean;
+  detail: string | null;
+}
+
+export interface AutoSyncResult {
+  synced: boolean;
+  reason: string | null;
+  next_due_at: string | null;
+  last_auto_sync_at: string | null;
+  status: "ok" | "failed" | "partial" | null;
+  results: AutoSyncItemResult[];
+}
+
+// ---- Auto-sync ----
+
+export const syncApi = {
+  getPreferences: () => apiFetch<SyncPreferences>("/sync/preferences"),
+  updatePreferences: (autoSyncEnabled: boolean, intervalHours: number) =>
+    apiFetch<SyncPreferences>("/sync/preferences", {
+      method: "PUT",
+      body: { auto_sync_enabled: autoSyncEnabled, interval_hours: intervalHours },
+    }),
+  auto: () => apiFetch<AutoSyncResult>("/sync/auto", { method: "POST" }),
+};
+
 export interface NotificationPreferences {
   budget_alerts_enabled: boolean;
   budget_threshold_pct: number;
