@@ -41,20 +41,20 @@ Demo login (seeded data, no Plaid credentials needed): **`demo@sentryapp.dev`** 
 ## Architecture
 
 ```
-┌─────────────┐        ┌──────────────────┐        ┌──────────────┐
-│   Next.js    │  REST  │     FastAPI       │  SQL   │  PostgreSQL   │
-│  (dashboard, │◄──────►│  (auth, budgets,  │◄──────►│  (users,      │
-│  charts,     │  JWT   │  sync, fraud      │        │  transactions,│
-│  Plaid Link) │        │  scoring)         │        │  budgets, ...)│
-└─────────────┘        └─────────┬─────────┘        └──────────────┘
+┌─────────────┐        ┌───────────────────┐        ┌───────────────┐
+│   Next.js   │  REST  │     FastAPI       │  SQL   │  PostgreSQL   │
+│  (dashboard,│◄──────►│  (auth, budgets,  │◄──────►│  (users,      │
+│  charts,    │  JWT   │  sync, fraud      │        │  transactions,│
+│  Plaid Link)│        │  scoring)         │        │  budgets, ...)│
+└─────────────┘        └─────────┬─────────┘        └───────────────┘
                                   │
                         ┌─────────┴─────────┐
                         ▼                   ▼
                 ┌───────────────┐   ┌──────────────────┐
-                │   Plaid API   │   │  IsolationForest  │
-                │   (Sandbox)   │   │  one model/user,  │
-                └───────────────┘   │  joblib-persisted │
-                                     └──────────────────┘
+                │   Plaid API   │   │  IsolationForest │
+                │   (Sandbox)   │   │  one model/user, │
+                └───────────────┘   │  joblib-persisted│
+                                    └──────────────────┘
 ```
 
 - **Frontend:** Next.js 16 (App Router, TypeScript), Tailwind, Recharts, `react-plaid-link`
@@ -206,9 +206,7 @@ These were deliberate cuts to keep scope tight, not gaps I missed:
 - **Resend's shared sender only delivers to your own Resend account address** —
   sending to arbitrary recipients needs a verified domain, out of scope for a
   single-user POC
-- **No savings goals, no CSV/PDF export, no manual transaction-category override, no
-  transaction search, no month-over-month spend comparison** — all scoped out to keep
-  this pass focused on net worth, recurring detection, and notifications
+
 
 ## Related
 
