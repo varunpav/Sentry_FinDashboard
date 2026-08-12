@@ -45,6 +45,9 @@ SUBSCRIPTIONS = [
     ("Spotify", 11.99, "ENTERTAINMENT"),
     ("Gym Membership", 39.99, "PERSONAL_CARE"),
 ]
+FLIGHT_MERCHANTS = ["Delta Air Lines", "United Airlines", "Southwest Airlines"]
+LODGING_MERCHANTS = ["Marriott Hotels", "Hilton Hotels", "Airbnb"]
+FUN_MERCHANTS = ["AMC Theatres", "Ticketmaster", "Topgolf", "Local Escape Room"]
 
 
 def _tx(account_id, ext_id, amount, dt, merchant, category, detailed=None, channel="in store"):
@@ -122,6 +125,52 @@ def generate_transactions(account_id: int, months: int = 6) -> list[Transaction]
             )
 
         day += timedelta(days=1)
+
+    # --- A few trips, spread across the window (not recurring -- one-off travel) ---
+    total_days = (now - start).days
+    for frac in (0.82, 0.5, 0.18):
+        trip_day = now - timedelta(days=int(total_days * frac))
+        flight_dt = trip_day.replace(hour=RNG.randint(6, 20), minute=RNG.randint(0, 59))
+        txns.append(
+            _tx(
+                account_id,
+                next_id(),
+                round(RNG.uniform(280, 650), 2),
+                flight_dt,
+                RNG.choice(FLIGHT_MERCHANTS),
+                "TRAVEL",
+                "TRAVEL_FLIGHTS",
+                channel="online",
+            )
+        )
+        hotel_dt = trip_day.replace(hour=RNG.randint(14, 22), minute=RNG.randint(0, 59))
+        txns.append(
+            _tx(
+                account_id,
+                next_id(),
+                round(RNG.uniform(420, 950), 2),
+                hotel_dt,
+                RNG.choice(LODGING_MERCHANTS),
+                "TRAVEL",
+                "TRAVEL_LODGING",
+                channel="online",
+            )
+        )
+
+    # --- A handful of one-off "fun" outings, distinct from the recurring subscriptions ---
+    for frac in (0.9, 0.7, 0.55, 0.35, 0.1):
+        fun_day = now - timedelta(days=int(total_days * frac))
+        dt = fun_day.replace(hour=RNG.randint(12, 22), minute=RNG.randint(0, 59))
+        txns.append(
+            _tx(
+                account_id,
+                next_id(),
+                round(max(RNG.gauss(55, 20), 15), 2),
+                dt,
+                RNG.choice(FUN_MERCHANTS),
+                "ENTERTAINMENT",
+            )
+        )
 
     # --- Injected anomalies ---
     anomaly_day = now - timedelta(days=12)
@@ -237,7 +286,8 @@ def main() -> None:
                 type="depository",
                 subtype="checking",
                 mask="0000",
-                current_balance=4200.00,
+                current_balance=10000.00,
+                available_balance=10000.00,
             )
             db.add(account)
             db.commit()
