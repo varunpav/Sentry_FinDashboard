@@ -18,6 +18,9 @@ GLOBAL_MODEL_KEY = "global"
 
 
 def _fetch_expense_df(db: Session, user_id: int) -> pd.DataFrame:
+    # The feature matrix (and thus what the fraud model learns as "normal") uses the
+    # user's corrected category when one exists -- a recategorized transaction should
+    # shift the model's notion of that category's typical spend on the next scoring pass.
     rows = (
         db.query(
             Transaction.id,
@@ -25,15 +28,15 @@ def _fetch_expense_df(db: Session, user_id: int) -> pd.DataFrame:
             Transaction.date,
             Transaction.transacted_at,
             Transaction.merchant_name,
-            Transaction.category_primary,
+            Transaction.effective_category,
         )
         .join(Account, Transaction.account_id == Account.id)
         .join(PlaidItem, Account.item_id == PlaidItem.id)
         .filter(PlaidItem.user_id == user_id)
         .filter(Transaction.amount > 0)
         .filter(
-            Transaction.category_primary.is_(None)
-            | Transaction.category_primary.notin_(EXCLUDED_CATEGORIES)
+            Transaction.effective_category.is_(None)
+            | Transaction.effective_category.notin_(EXCLUDED_CATEGORIES)
         )
         .all()
     )

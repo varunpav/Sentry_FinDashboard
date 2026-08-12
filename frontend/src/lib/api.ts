@@ -81,7 +81,9 @@ function buildQuery(query?: RequestOptions["query"]): string {
   return qs ? `?${qs}` : "";
 }
 
-export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+// Shared request/401-refresh-retry logic, returning the raw Response. apiFetch and
+// apiDownload both build on this so the auth handling never diverges between the two.
+async function authedFetch(path: string, options: RequestOptions = {}): Promise<Response> {
   const { method = "GET", body, auth = true, query } = options;
 
   const doFetch = async (token: string | null): Promise<Response> => {
@@ -105,6 +107,12 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     }
   }
 
+  return res;
+}
+
+export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const res = await authedFetch(path, options);
+
   if (!res.ok) {
     const detail = await parseErrorDetail(res);
     throw new ApiError(detail, res.status);
@@ -112,6 +120,31 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+// Downloads a binary response (CSV/PDF/etc.) and triggers a browser save-as, rather
+// than parsing it as JSON like apiFetch does.
+export async function apiDownload(
+  path: string,
+  filename: string,
+  query?: RequestOptions["query"]
+): Promise<void> {
+  const res = await authedFetch(path, { query });
+
+  if (!res.ok) {
+    const detail = await parseErrorDetail(res);
+    throw new ApiError(detail, res.status);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 // ---- Types ----
@@ -149,6 +182,8 @@ export interface Transaction {
   name: string | null;
   category_primary: string | null;
   category_detailed: string | null;
+  category_override: string | null;
+  effective_category: string | null;
   payment_channel: string | null;
   pending: boolean;
   is_flagged: boolean;
@@ -278,6 +313,7 @@ export const transactionsApi = {
     startDate?: string;
     endDate?: string;
     flaggedOnly?: boolean;
+    search?: string;
     page?: number;
     pageSize?: number;
   }) =>
@@ -288,9 +324,15 @@ export const transactionsApi = {
         start_date: params.startDate,
         end_date: params.endDate,
         flagged_only: params.flaggedOnly,
+        search: params.search,
         page: params.page,
         page_size: params.pageSize,
       },
+    }),
+  updateCategory: (id: number, categoryOverride: string | null) =>
+    apiFetch<Transaction>(`/transactions/${id}`, {
+      method: "PATCH",
+      body: { category_override: categoryOverride },
     }),
 };
 
@@ -302,6 +344,77 @@ export const budgetsApi = {
     apiFetch<Budget>("/budgets", { method: "PUT", body: { category, monthly_limit: monthlyLimit } }),
   spendingSummary: (month?: string) =>
     apiFetch<SpendingSummary>("/spending/summary", { query: { month } }),
+};
+
+export interface MonthlyTrendPoint {
+  month: string;
+  total_spent: number;
+}
+
+export interface CategoryComparisonRow {
+  category: string;
+  current: number;
+  previous: number;
+  delta: number;
+  delta_pct: number | null;
+}
+
+export interface CategoryComparisonResponse {
+  month: string;
+  previous_month: string;
+  categories: CategoryComparisonRow[];
+}
+
+export interface Goal {
+  id: number;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+  target_date: string | null;
+  status: "active" | "achieved" | "archived";
+  progress_pct: number;
+  created_at: string;
+}
+
+export interface GoalListResponse {
+  goals: Goal[];
+  total_saved: number;
+  total_target: number;
+}
+
+// ---- Goals ----
+
+export const goalsApi = {
+  list: () => apiFetch<GoalListResponse>("/goals"),
+  create: (name: string, targetAmount: number, targetDate?: string) =>
+    apiFetch<Goal>("/goals", {
+      method: "POST",
+      body: { name, target_amount: targetAmount, target_date: targetDate || null },
+    }),
+  delete: (id: number) => apiFetch<void>(`/goals/${id}`, { method: "DELETE" }),
+  contribute: (id: number, amount: number) =>
+    apiFetch<Goal>(`/goals/${id}/contribute`, { method: "POST", body: { amount } }),
+};
+
+// ---- Export ----
+
+export const exportApi = {
+  transactionsCsv: (startDate: string, endDate: string) =>
+    apiDownload("/export/transactions.csv", `sentry-transactions-${startDate}-to-${endDate}.csv`, {
+      start_date: startDate,
+      end_date: endDate,
+    }),
+  summaryPdf: (year: number) =>
+    apiDownload("/export/summary.pdf", `sentry-summary-${year}.pdf`, { year }),
+};
+
+// ---- Insights ----
+
+export const insightsApi = {
+  monthlyTrend: (months?: number) =>
+    apiFetch<{ points: MonthlyTrendPoint[] }>("/insights/monthly-trend", { query: { months } }),
+  categoryComparison: (month?: string) =>
+    apiFetch<CategoryComparisonResponse>("/insights/category-comparison", { query: { month } }),
 };
 
 // ---- Net worth ----

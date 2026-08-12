@@ -2,25 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { type Budget, budgetsApi } from "@/lib/api";
+import { EXPENSE_CATEGORIES } from "@/lib/categories";
 import { formatCategoryLabel } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
 import { Meter } from "@/components/ui/Meter";
-
-const EXPENSE_CATEGORIES = [
-  "BANK_FEES",
-  "ENTERTAINMENT",
-  "FOOD_AND_DRINK",
-  "GENERAL_MERCHANDISE",
-  "HOME_IMPROVEMENT",
-  "MEDICAL",
-  "PERSONAL_CARE",
-  "GENERAL_SERVICES",
-  "GOVERNMENT_AND_NON_PROFIT",
-  "TRANSPORTATION",
-  "TRAVEL",
-  "RENT_AND_UTILITIES",
-  "OTHER",
-];
 
 export default function BudgetsPage() {
   const [budgets, setBudgets] = useState<Budget[]>([]);

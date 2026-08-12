@@ -13,6 +13,8 @@ class TransactionResponse(BaseModel):
     name: str | None
     category_primary: str | None
     category_detailed: str | None
+    category_override: str | None
+    effective_category: str | None
     payment_channel: str | None
     pending: bool
     is_flagged: bool = False
@@ -25,3 +27,7 @@ class PaginatedTransactions(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class TransactionCategoryUpdate(BaseModel):
+    category_override: str | None = None

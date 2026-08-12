@@ -2,8 +2,8 @@
 
 Working notes on the reasoning behind Sentry's less-obvious design choices — where the
 tradeoffs are, what was rejected and why, and where the current design intentionally
-stops short. Three areas: fraud detection, recurring charge detection, and the
-notification architecture.
+stops short. Four areas: fraud detection, recurring charge detection, the notification
+architecture, and manual category overrides.
 
 ## Fraud Detection
 
@@ -228,3 +228,42 @@ was unset, potentially flooding an inbox with months of backlogged budget/bill a
 the moment the key is added. Logging "skipped" as handled trades that off deliberately:
 it's a one-line change (`if result != "skipped": db.add(...)`) to flip if the opposite
 behavior is ever preferred.
+
+## Manual Category Override
+
+### Why a separate column, not overwriting `category_primary`
+
+`app/routers/plaid.py::_run_sync_for_item` overwrites a transaction's `category_primary`
+and `category_detailed` unconditionally on every re-sync, straight from whatever Plaid
+returns that time — there was no guard against it before this feature, and adding one
+felt like the wrong fix. A user's correction stored in `category_primary` would get
+silently clobbered the next time that transaction happened to come back in a sync
+batch (Plaid resends `modified` transactions, not just genuinely new ones).
+
+Instead, `Transaction.category_override` (`app/models/transaction.py`) is a separate,
+nullable column that sync never touches, paired with an `effective_category` computed
+via `sqlalchemy.ext.hybrid.hybrid_property` — one Python expression
+(`category_override or category_primary`) that also compiles to real SQL
+(`COALESCE(category_override, category_primary)`) so it works identically as a
+Python attribute and inside `.filter()`/`.group_by()` in the same query. The override
+survives every future sync for free, and clearing it (`category_override = null`)
+cleanly reverts to whatever Plaid currently says — no separate "restore original"
+logic needed, since the original was never touched.
+
+The cost of this approach is that `effective_category` had to be threaded through
+every place that previously grouped or filtered on `category_primary` directly:
+`budget_service` (both the exclusion filter and the per-category aggregation),
+`fraud_service`'s feature-matrix query, and the transactions list/search endpoint.
+Missing any one of them would mean an override silently doesn't affect the thing a
+user would reasonably expect it to — e.g. recategorizing a charge as `TRANSFER_OUT`
+but it still counting toward spend totals.
+
+### The fraud-model coupling this creates
+
+`fraud_service._fetch_expense_df` now selects `effective_category`, which means a
+category correction changes that user's fraud feature vectors (`category_zscore`,
+`category_rarity`) the next time transactions are scored. This is intended — the
+model should learn from the corrected data, the same way it should learn from
+anything else about a user's real spending — but it's a real coupling between two
+features that otherwise look unrelated, worth stating explicitly rather than leaving
+implicit.

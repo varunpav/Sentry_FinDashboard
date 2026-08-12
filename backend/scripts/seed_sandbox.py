@@ -18,6 +18,7 @@ from app.models.account import Account  # noqa: E402
 from app.models.balance_snapshot import AccountBalanceSnapshot  # noqa: E402
 from app.models.budget import Budget  # noqa: E402
 from app.models.plaid_item import PlaidItem  # noqa: E402
+from app.models.savings_goal import SavingsGoal  # noqa: E402
 from app.models.transaction import Transaction  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.services import fraud_service, notification_service, recurring_service  # noqa: E402
@@ -36,6 +37,14 @@ DEMO_BUDGETS = [
     ("TRANSPORTATION", 250.0),
     ("FOOD_AND_DRINK", 500.0),
     ("GENERAL_MERCHANDISE", 600.0),
+]
+
+# Partial progress on each so the goals page tells a story on first login rather than
+# showing three empty progress bars.
+DEMO_GOALS = [
+    ("Emergency Fund", 10000.0, 6200.0),
+    ("Vacation", 3000.0, 1400.0),
+    ("New Laptop", 2000.0, 800.0),
 ]
 
 GROCERY_MERCHANTS = ["Trader Joe's", "Whole Foods", "Safeway", "Kroger"]
@@ -335,6 +344,46 @@ def main() -> None:
 
         notification_service.get_or_create_preferences(db, user.id)
         print("Ensured default notification preferences.")
+
+        existing_goal_names = {g.name for g in db.query(SavingsGoal).filter(SavingsGoal.user_id == user.id).all()}
+        seeded_goals = 0
+        for name, target_amount, current_amount in DEMO_GOALS:
+            if name not in existing_goal_names:
+                status = "achieved" if current_amount >= target_amount else "active"
+                db.add(
+                    SavingsGoal(
+                        user_id=user.id,
+                        name=name,
+                        target_amount=target_amount,
+                        current_amount=current_amount,
+                        status=status,
+                    )
+                )
+                seeded_goals += 1
+        if seeded_goals:
+            db.commit()
+        print(f"Seeded {seeded_goals} goal(s).")
+
+        # Demo the category-override feature on a TRAVEL transaction specifically --
+        # neither TRAVEL nor ENTERTAINMENT has a seeded budget, so this can't disturb
+        # the good/warning/critical budget spread tuned above.
+        override_candidate = (
+            db.query(Transaction)
+            .filter(
+                Transaction.account_id == account.id,
+                Transaction.category_primary == "TRAVEL",
+                Transaction.category_override.is_(None),
+            )
+            .order_by(Transaction.date.desc())
+            .first()
+        )
+        if override_candidate is not None:
+            override_candidate.category_override = "ENTERTAINMENT"
+            db.commit()
+            print(
+                f"Set a demo category override on transaction {override_candidate.id} "
+                f"({override_candidate.merchant_name})."
+            )
 
         recurring_result = recurring_service.detect_and_persist(db, user.id)
         print(

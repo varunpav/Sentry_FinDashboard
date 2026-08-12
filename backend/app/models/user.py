@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from app.models.budget import Budget
     from app.models.notification import NotificationLog, NotificationPreferences
     from app.models.recurring_series import RecurringSeries
+    from app.models.savings_goal import SavingsGoal
 
 
 class User(Base):
@@ -36,5 +37,8 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan", uselist=False
     )
     notification_logs: Mapped[list["NotificationLog"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    goals: Mapped[list["SavingsGoal"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )

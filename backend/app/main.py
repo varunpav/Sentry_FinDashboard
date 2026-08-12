@@ -2,7 +2,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import auth, budgets, fraud, networth, notifications, plaid, recurring, transactions
+from app.routers import (
+    auth,
+    budgets,
+    export,
+    fraud,
+    goals,
+    insights,
+    networth,
+    notifications,
+    plaid,
+    recurring,
+    transactions,
+)
 
 settings = get_settings()
 
@@ -24,6 +36,9 @@ app.include_router(fraud.router)
 app.include_router(networth.router)
 app.include_router(recurring.router)
 app.include_router(notifications.router)
+app.include_router(insights.router)
+app.include_router(goals.router)
+app.include_router(export.router)
 
 
 @app.get("/health")

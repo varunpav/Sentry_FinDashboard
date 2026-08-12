@@ -7,6 +7,7 @@ from app.models.fraud_flag import FraudFlag
 from app.models.balance_snapshot import AccountBalanceSnapshot
 from app.models.recurring_series import RecurringSeries
 from app.models.notification import NotificationPreferences, NotificationLog
+from app.models.savings_goal import SavingsGoal
 
 __all__ = [
     "User",
@@ -19,4 +20,5 @@ __all__ = [
     "RecurringSeries",
     "NotificationPreferences",
     "NotificationLog",
+    "SavingsGoal",
 ]

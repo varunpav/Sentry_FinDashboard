@@ -32,8 +32,8 @@ def _user_expense_query(db: Session, user_id: int, start: date, end: date):
         .filter(Transaction.date >= start, Transaction.date <= end)
         .filter(Transaction.amount > 0)
         .filter(
-            Transaction.category_primary.is_(None)
-            | Transaction.category_primary.notin_(EXCLUDED_CATEGORIES)
+            Transaction.effective_category.is_(None)
+            | Transaction.effective_category.notin_(EXCLUDED_CATEGORIES)
         )
     )
 
@@ -44,10 +44,10 @@ def get_spending_summary(db: Session, user_id: int, month: str) -> SpendingSumma
     category_rows = (
         _user_expense_query(db, user_id, start, end)
         .with_entities(
-            Transaction.category_primary,
+            Transaction.effective_category,
             func.sum(Transaction.amount).label("total"),
         )
-        .group_by(Transaction.category_primary)
+        .group_by(Transaction.effective_category)
         .all()
     )
 
@@ -55,9 +55,9 @@ def get_spending_summary(db: Session, user_id: int, month: str) -> SpendingSumma
 
     by_category = [
         CategorySpend(
-            category=row.category_primary or "OTHER",
+            category=row.effective_category or "OTHER",
             spent=round(float(row.total), 2),
-            budget=budgets.get(row.category_primary or "OTHER"),
+            budget=budgets.get(row.effective_category or "OTHER"),
         )
         for row in category_rows
     ]
@@ -104,10 +104,10 @@ def upsert_budget(db: Session, user_id: int, category: str, monthly_limit: float
 def list_budgets_with_spend(db: Session, user_id: int, month: str) -> list[dict]:
     start, end = _month_bounds(month)
     spent_by_category = {
-        row.category_primary or "OTHER": float(row.total)
+        row.effective_category or "OTHER": float(row.total)
         for row in _user_expense_query(db, user_id, start, end)
-        .with_entities(Transaction.category_primary, func.sum(Transaction.amount).label("total"))
-        .group_by(Transaction.category_primary)
+        .with_entities(Transaction.effective_category, func.sum(Transaction.amount).label("total"))
+        .group_by(Transaction.effective_category)
         .all()
     }
 
