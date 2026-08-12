@@ -28,6 +28,16 @@ Demo login (seeded data, no Plaid credentials needed): **`demo@sentryapp.dev`** 
   alerts, and a weekly digest, each independently toggleable, sent via Resend
 - **Auth** — JWT access/refresh tokens, multi-user
 
+## Screenshots (Dummy Data)
+
+<img width="1893" height="907" alt="image" src="https://github.com/user-attachments/assets/a2325e7f-e048-46ad-a686-774c231b8cd0" />
+<img width="1896" height="908" alt="image" src="https://github.com/user-attachments/assets/d69155d9-cdc6-40b2-9860-218f69e1a0b6" />
+<img width="1919" height="897" alt="image" src="https://github.com/user-attachments/assets/bb90c2a3-c368-41db-b883-f9e84b4098cc" />
+<img width="1919" height="901" alt="image" src="https://github.com/user-attachments/assets/3db9c7d2-ec01-4ecc-9957-20b8fe312488" />
+<img width="1917" height="892" alt="image" src="https://github.com/user-attachments/assets/84083557-0c91-4ae2-956d-60205205228d" />
+<img width="1911" height="895" alt="image" src="https://github.com/user-attachments/assets/3319457c-9282-4ec8-b29d-d2f2b577c825" />
+
+
 ## Architecture
 
 ```
