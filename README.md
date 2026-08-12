@@ -148,7 +148,3 @@ to your own account without a verified domain · goal contributions increment a 
 total with no per-contribution audit trail · PDF export is one annual summary, not a
 report builder.
 
-## Related
-
-`../finance-anomaly-detector` is a separate, earlier exploration of the same problem
-space (pgvector + LLM explanations) — unrelated codebase, kept as a sibling project.
