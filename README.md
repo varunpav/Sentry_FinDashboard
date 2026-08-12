@@ -159,7 +159,3 @@ than syncing precisely on schedule (why: `docs/design-decisions.md`) · auto-syn
 defaults to off, since the seeded demo item's placeholder Plaid token can't actually
 sync (it degrades gracefully — logs a failed status — but there's nothing to see).
 
-## Related
-
-`../finance-anomaly-detector` is a separate, earlier exploration of the same problem
-space (pgvector + LLM explanations) — unrelated codebase, kept as a sibling project.
