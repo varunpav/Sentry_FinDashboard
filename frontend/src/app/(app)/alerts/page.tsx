@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { type FraudFlag, fraudApi } from "@/lib/api";
+import { type FraudFeedbackSummary, type FraudFlag, fraudApi } from "@/lib/api";
 import { formatCategoryLabel, formatCurrency, formatDate } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -16,6 +16,7 @@ const TABS: { key: string | undefined; label: string }[] = [
 export default function AlertsPage() {
   const [tab, setTab] = useState<string | undefined>("pending");
   const [flags, setFlags] = useState<FraudFlag[]>([]);
+  const [feedback, setFeedback] = useState<FraudFeedbackSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
 
@@ -28,15 +29,24 @@ export default function AlertsPage() {
     }
   }, []);
 
+  const loadFeedback = useCallback(async () => {
+    setFeedback(await fraudApi.feedback());
+  }, []);
+
   useEffect(() => {
     load(tab);
   }, [tab, load]);
+
+  useEffect(() => {
+    loadFeedback();
+  }, [loadFeedback]);
 
   async function handleUpdate(id: number, status: "confirmed" | "dismissed") {
     setUpdatingId(id);
     try {
       await fraudApi.updateStatus(id, status);
       await load(tab);
+      await loadFeedback();
     } finally {
       setUpdatingId(null);
     }
@@ -47,6 +57,21 @@ export default function AlertsPage() {
       <h1 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
         Fraud alerts
       </h1>
+
+      {feedback && (feedback.dismissed_count > 0 || feedback.confirmed_count > 0) && (
+        <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+          <p>
+            Learned from {feedback.dismissed_count} dismissal{feedback.dismissed_count === 1 ? "" : "s"} ·{" "}
+            {feedback.confirmed_count} confirmed
+          </p>
+          {feedback.suppressed_merchants.length > 0 && (
+            <p className="mt-0.5">
+              Raised the bar for:{" "}
+              {feedback.suppressed_merchants.map((m) => `${m.merchant} (${m.dismissals})`).join(", ")}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-1">
         {TABS.map((t) => (

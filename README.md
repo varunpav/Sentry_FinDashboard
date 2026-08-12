@@ -27,7 +27,9 @@ Location: `C:\Users\varun\passion-projs\sentry-findashboard`
 - **Recurring charges & bill reminders** — detected from transaction history alone,
   see [`docs/design-decisions.md`](docs/design-decisions.md)
 - **Fraud detection** — per-user unsupervised anomaly detection with plain-English
-  reasons, see [`docs/design-decisions.md`](docs/design-decisions.md)
+  reasons, and feedback-driven retraining: dismissing a flag feeds back into the next
+  scoring pass, and a merchant dismissed enough times needs a stricter bar to flag
+  again, see [`docs/design-decisions.md`](docs/design-decisions.md)
 - **Email notifications** — budget/bill/fraud alerts + weekly digest via Resend,
   per-type granularity controls
 - **Export** — transactions as CSV, an annual spend/budget summary as PDF
@@ -116,9 +118,9 @@ travel, plus injected fraud anomalies, balance history, budgets, 3 savings goals
 partial progress, a demo category override, recurring-charge detection, and default
 notification preferences. Prints the login.
 
-**Tests:** `pytest` (58 tests across auth, budgets, fraud, net worth, recurring
-detection, notifications, transaction search/override, insights, goals, export,
-and auto-sync scheduling).
+**Tests:** `pytest` (64 tests across auth, budgets, fraud (including feedback-driven
+retraining), net worth, recurring detection, notifications, transaction
+search/override, insights, goals, export, and auto-sync scheduling).
 
 ### 3. Frontend
 
@@ -149,8 +151,10 @@ Open http://localhost:3000.
 ## Known limitations & scope cuts
 
 Deliberate, not gaps I missed: Plaid Sandbox only (no webhooks, no Production) · not
-deployed · no feedback-driven fraud retraining yet (recorded but unused — see
-`docs/design-decisions.md`) · Resend's shared sender only delivers to your own account
+deployed · fraud feedback only adjusts training data and a per-merchant threshold, not
+a full supervised second-stage classifier — see `docs/design-decisions.md` for the
+concrete label-count threshold that would justify one · Resend's shared sender only
+delivers to your own account
 without a verified domain · goal contributions increment a single total with no
 per-contribution audit trail · PDF export is one annual summary, not a report builder ·
 auto-sync only runs while the backend process is running — it's a scheduler, not a

@@ -113,35 +113,75 @@ aren't comparable in any absolute sense across users with different data
 distributions — percentile-within-user is the thing that's actually
 meaningful.
 
-### What feedback-driven retraining would look like (not built)
+### Feedback-driven retraining
 
-Confirm/dismiss actions on a flag are recorded (`FraudFlag.status`) but
-currently only affect what's displayed — they don't feed back into the model.
-If this went further, a few directions are worth naming:
+Confirm/dismiss actions on a flag are recorded (`FraudFlag.status`) and now
+feed back into the next scoring pass, via two mechanisms
+(`app/services/fraud_service.py`). No new trigger was needed for either:
+`_get_model_for_user` already retrains from scratch on every scoring call
+once a user clears the personal-model transaction threshold, so feedback
+takes effect on the user's next sync — there's no retrain button in the UI,
+deliberately (see below).
 
-- **Simplest — treat dismissals as synthetic "normal" labels.** Fold
-  dismissed transactions back into the training set for that user's *next*
-  retrain, explicitly as inliers. This nudges the per-user model's notion of
-  "normal" without needing a second model at all, and is the natural next
-  step given the current architecture.
-- **A second-stage supervised layer, once labels accumulate.** After a user
-  has enough confirmed/dismissed flags, the same engineered feature vector
-  could train a small supervised classifier (logistic regression or gradient
-  boosting) *on top of* the Isolation Forest's anomaly score, effectively
-  learning "of the things the unsupervised model flags as unusual, which
-  ones does *this user* actually consider fraud." That's a meaningfully
-  different, harder project than the fold-back approach — it needs enough
-  labeled examples per user to avoid overfitting on maybe a dozen data
-  points, which is the real blocker to building it now.
-- **Merchant- or category-level threshold adjustment.** If a user repeatedly
-  dismisses flags at the same recurring merchant (a legitimately large but
-  irregular annual payment, say), that merchant could get a locally
-  loosened threshold rather than waiting for a full retrain cycle to absorb
-  it.
+**1. Training-set curation.** `_curate_training_frame` drops `confirmed`
+rows from training entirely — confirmed fraud isn't an example of "normal,"
+and before this change it silently contaminated the very distribution the
+model called normal. `dismissed` rows are kept and repeated in the training
+frame (default 4×, `FRAUD_DISMISSED_REPEAT_COUNT`).
 
-None of this is implemented — it's a scope cut, not an oversight — but the
-`status` field and the per-user model boundary already in place are exactly
-what any of these three directions would build on.
+That "repeated" is deliberate phrasing, not "upweighted," and it's the one
+real surprise in this feature: `IsolationForest.fit` accepts a
+`sample_weight` argument, and the initial plan was to pass dismissed rows in
+at a higher weight rather than physically duplicate them. Testing it — by
+comparing `decision_function` output across `sample_weight` values from
+`0.001` to `1000`, both with and without `bootstrap=True` — turned up that it
+has **no measurable effect on this estimator's output at all**. The reason
+is structural: `IsolationForest`'s trees pick a uniformly random *threshold*
+within each node's actual data range (`splitter="random"`), not a
+criterion-optimized one, so nothing about how the split point is chosen
+consults sample weight. Physically repeating a row, by contrast, changes the
+data reaching each node and measurably shifts `decision_function` — verified
+against the same test harness. `FRAUD_DISMISSED_REPEAT_COUNT` names what
+actually happens rather than a parameter that turned out to be a no-op.
+
+**2. Merchant-level suppression.** If a user has dismissed
+`FRAUD_MERCHANT_SUPPRESSION_MIN_DISMISSALS` (default 2) flags at the same
+merchant — grouped with the same `normalize_merchant` used for recurring
+detection, so `"Netflix"` and `"NETFLIX #123"` collapse together — a new
+transaction at that merchant needs to clear a stricter percentile cutoff to
+flag again (`FRAUD_MERCHANT_SUPPRESSION_PERCENTILE_RATIO`, default 0.33× the
+normal threshold) rather than the standard one.
+
+This is deliberately a **raised bar, not a whitelist**: the stricter cutoff
+still exists, so a wildly extreme charge at a previously-dismissed merchant
+still flags (`test_suppression_is_raised_bar_not_whitelist`). The central
+tradeoff is real, though, and worth stating plainly rather than selling this
+as free: a user who dismisses genuine fraud at a merchant twice — rather
+than a false positive — raises that merchant's bar for detecting the next
+one too. Curation and suppression are deliberately paired for this reason:
+curation alone is statistically real but gradual (repeating one row among
+~150+ shifts scores but rarely flips a verdict outright), while suppression
+is what makes the loop demonstrable and crisp. Both are exercised end-to-end
+in `tests/test_fraud.py`, including a same-history control-vs-dismissed-user
+comparison that proves the loop actually changes outcomes, not just display
+state.
+
+**What's still not built: a second-stage supervised layer.** After a user
+has enough confirmed/dismissed flags, the same engineered feature vector
+could train a small supervised classifier (logistic regression or gradient
+boosting) *on top of* the Isolation Forest's anomaly score — learning "of
+the things the unsupervised model flags as unusual, which ones does *this
+user* actually consider fraud." That needs real volume to avoid overfitting:
+a reasonable floor is ~25+ labeled flags with at least 5 per class. The
+seeded demo produces roughly 7 flags total, so this wouldn't activate on
+demo data even if built — a concrete number, not a hand-wave, for why this
+stays a documented cut rather than a half-built feature.
+
+The UI surfaces the *state* of this loop (`GET /fraud/feedback`, shown as a
+"learned from N dismissals · M confirmed" line on the Alerts page, plus
+which merchants are currently suppressed) but has no retrain control —
+retraining isn't something a user triggers, it's what already happens on
+the next scoring pass.
 
 ## Recurring Charge Detection
 

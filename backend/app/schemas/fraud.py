@@ -24,3 +24,15 @@ class FraudFlagStatusUpdate(BaseModel):
 class RetrainResponse(BaseModel):
     trained_users: int
     message: str
+
+
+class SuppressedMerchant(BaseModel):
+    merchant: str
+    dismissals: int
+
+
+class FraudFeedbackSummary(BaseModel):
+    dismissed_count: int
+    confirmed_count: int
+    pending_count: int
+    suppressed_merchants: list[SuppressedMerchant]

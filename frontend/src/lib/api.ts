@@ -270,6 +270,18 @@ export interface FraudFlag {
   status: "pending" | "confirmed" | "dismissed";
 }
 
+export interface SuppressedMerchant {
+  merchant: string;
+  dismissals: number;
+}
+
+export interface FraudFeedbackSummary {
+  dismissed_count: number;
+  confirmed_count: number;
+  pending_count: number;
+  suppressed_merchants: SuppressedMerchant[];
+}
+
 // ---- Auth ----
 
 export const authApi = {
@@ -514,5 +526,5 @@ export const fraudApi = {
   listFlags: (status?: string) => apiFetch<FraudFlag[]>("/fraud/flags", { query: { status_filter: status } }),
   updateStatus: (flagId: number, status: "confirmed" | "dismissed") =>
     apiFetch<FraudFlag>(`/fraud/flags/${flagId}`, { method: "POST", body: { status } }),
-  retrain: () => apiFetch<{ trained_users: number; message: string }>("/fraud/retrain", { method: "POST" }),
+  feedback: () => apiFetch<FraudFeedbackSummary>("/fraud/feedback"),
 };

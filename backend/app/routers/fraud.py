@@ -8,7 +8,12 @@ from app.models.fraud_flag import FraudFlag
 from app.models.plaid_item import PlaidItem
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.schemas.fraud import FraudFlagResponse, FraudFlagStatusUpdate, RetrainResponse
+from app.schemas.fraud import (
+    FraudFeedbackSummary,
+    FraudFlagResponse,
+    FraudFlagStatusUpdate,
+    RetrainResponse,
+)
 from app.services import fraud_service
 
 router = APIRouter(prefix="/fraud", tags=["fraud"])
@@ -78,6 +83,13 @@ def update_flag_status(
     db.commit()
     db.refresh(flag)
     return _to_response(flag)
+
+
+@router.get("/feedback", response_model=FraudFeedbackSummary)
+def get_feedback_summary(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> FraudFeedbackSummary:
+    return FraudFeedbackSummary(**fraud_service.feedback_summary(db, current_user.id))
 
 
 @router.post("/retrain", response_model=RetrainResponse)

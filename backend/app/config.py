@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     fraud_anomaly_threshold_percentile: float = 3.0
     fraud_min_transactions_for_personal_model: int = 50
 
+    # Feedback-driven retraining (see docs/design-decisions.md). IsolationForest's
+    # sample_weight is accepted but has no measurable effect on decision_function
+    # (verified empirically), so "upweighting" a dismissed row means repeating it in
+    # the training frame this many times, not literal sample_weight.
+    fraud_dismissed_repeat_count: int = 4
+    fraud_merchant_suppression_min_dismissals: int = 2
+    fraud_merchant_suppression_percentile_ratio: float = 0.33
+
     models_dir: str = "models"
 
     resend_api_key: str = ""

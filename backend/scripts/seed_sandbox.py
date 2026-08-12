@@ -8,6 +8,7 @@ Usage (from backend/, with the venv active and Postgres running):
 import argparse
 import random
 import sys
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.models.account import Account  # noqa: E402
 from app.models.balance_snapshot import AccountBalanceSnapshot  # noqa: E402
 from app.models.budget import Budget  # noqa: E402
+from app.models.fraud_flag import FraudFlag  # noqa: E402
 from app.models.plaid_item import PlaidItem  # noqa: E402
 from app.models.savings_goal import SavingsGoal  # noqa: E402
 from app.models.transaction import Transaction  # noqa: E402
@@ -311,12 +313,46 @@ def main() -> None:
             db.commit()
             print(f"Inserted {len(txns)} synthetic transactions.")
 
-        all_txn_ids = [
-            row[0]
-            for row in db.query(Transaction.id).filter(Transaction.account_id == account.id).all()
-        ]
-        created_flags = fraud_service.score_transactions_for_user(db, user.id, all_txn_ids)
-        print(f"Fraud scoring created {created_flags} new flag(s).")
+            # Fraud scoring (and the auto-dismiss step below) only make sense to run once,
+            # against the transactions just generated -- exactly like production sync,
+            # which only ever scores newly-synced transactions, never re-scores existing
+            # history. Re-scoring a static, unchanged transaction set on every script run
+            # is not just redundant: since feedback now feeds into training
+            # (_curate_training_frame), each rerun would retrain on slightly different
+            # data and could surface new flags on old transactions purely from that
+            # shift, defeating idempotency for no benefit.
+            new_txn_ids = [t.id for t in txns]
+            created_flags = fraud_service.score_transactions_for_user(db, user.id, new_txn_ids)
+            print(f"Fraud scoring created {created_flags} new flag(s).")
+
+            # Simulate the realistic user action of dismissing cold-start false
+            # positives: a demonstrably recurring merchant (appears >=3 times) that got
+            # flagged on its very first sighting (see docs/design-decisions.md on
+            # new_merchant).
+            merchant_counts = Counter(
+                recurring_service.normalize_merchant(m or "")
+                for (m,) in db.query(Transaction.merchant_name)
+                .filter(Transaction.account_id == account.id)
+                .all()
+            )
+            pending_flags = (
+                db.query(FraudFlag)
+                .join(Transaction, FraudFlag.transaction_id == Transaction.id)
+                .filter(Transaction.account_id == account.id, FraudFlag.status == "pending")
+                .all()
+            )
+            auto_dismissed = 0
+            for flag in pending_flags:
+                key = recurring_service.normalize_merchant(flag.transaction.merchant_name or "")
+                if merchant_counts.get(key, 0) >= 3:
+                    flag.status = "dismissed"
+                    auto_dismissed += 1
+            if auto_dismissed:
+                db.commit()
+            print(
+                f"Auto-dismissed {auto_dismissed} cold-start false positive(s) "
+                "(recurring merchant, first sighting)."
+            )
 
         existing_budget_categories = {
             b.category for b in db.query(Budget).filter(Budget.user_id == user.id).all()
