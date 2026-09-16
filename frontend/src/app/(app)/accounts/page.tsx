@@ -9,6 +9,7 @@ import {
 } from "@/lib/api";
 import { formatCurrency, titleCase } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { StatTile } from "@/components/ui/StatTile";
 import { Button } from "@/components/ui/Button";
 import { Meter } from "@/components/ui/Meter";
@@ -124,21 +125,21 @@ export default function AccountsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-text-primary">Accounts</h1>
-          <p className="mt-1 text-sm text-text-muted">Balances across every linked account.</p>
-        </div>
-        {accounts && accounts.length > 0 && (
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={handleRefreshBalances} loading={refreshing}>
-              {!refreshing && Icon.refresh({ size: 14 })}
-              Refresh balances
-            </Button>
-            <PlaidLinkButton onLinked={load} />
-          </div>
-        )}
-      </div>
+      <PageHeader
+        title="Accounts"
+        description="Balances across every linked account."
+        action={
+          accounts && accounts.length > 0 ? (
+            <>
+              <Button size="sm" onClick={handleRefreshBalances} loading={refreshing}>
+                {!refreshing && Icon.refresh({ size: 14 })}
+                Refresh balances
+              </Button>
+              <PlaidLinkButton onLinked={load} />
+            </>
+          ) : undefined
+        }
+      />
 
       {loading ? (
         <>

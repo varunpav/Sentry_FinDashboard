@@ -22,6 +22,7 @@ import {
 import { formatCategoryLabel, formatCurrency, formatDate } from "@/lib/format";
 import { getCategoryColor } from "@/lib/categories";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { StatTile } from "@/components/ui/StatTile";
 import { Meter } from "@/components/ui/Meter";
 import { PlaidLinkButton } from "@/components/PlaidLinkButton";
@@ -199,10 +200,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-text-primary">Dashboard</h1>
-        {accounts.length === 0 && <PlaidLinkButton onLinked={loadData} />}
-      </div>
+      <PageHeader title="Dashboard" action={accounts.length === 0 ? <PlaidLinkButton onLinked={loadData} /> : undefined} />
 
       {accounts.length === 0 && (
         <Card>

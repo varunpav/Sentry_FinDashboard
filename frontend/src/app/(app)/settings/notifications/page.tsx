@@ -9,6 +9,7 @@ import {
   syncApi,
 } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { IntervalSlider } from "@/components/ui/IntervalSlider";
 import { Toggle } from "@/components/ui/Toggle";
 import { Button } from "@/components/ui/Button";
@@ -140,13 +141,15 @@ export default function NotificationSettingsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-text-primary">Notification settings</h1>
-        <Button onClick={handleRun} loading={running}>
-          {!running && Icon.bell({ size: 14 })}
-          Run check now
-        </Button>
-      </div>
+      <PageHeader
+        title="Notification settings"
+        action={
+          <Button onClick={handleRun} loading={running}>
+            {!running && Icon.bell({ size: 14 })}
+            Run check now
+          </Button>
+        }
+      />
 
       <Card>
         <p className="text-sm text-text-muted">

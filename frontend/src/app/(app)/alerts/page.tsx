@@ -5,6 +5,7 @@ import Link from "next/link";
 import { type FraudFeedbackSummary, type FraudFlag, fraudApi } from "@/lib/api";
 import { formatCategoryLabel, formatCurrency, formatDate } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge, SeverityBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Tabs, type TabItem } from "@/components/ui/Tabs";
@@ -92,7 +93,7 @@ export default function AlertsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold text-text-primary">Fraud alerts</h1>
+      <PageHeader title="Fraud alerts" />
 
       {feedback && (feedback.dismissed_count > 0 || feedback.confirmed_count > 0) && (
         <Card className="!py-3">

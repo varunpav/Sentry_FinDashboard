@@ -13,6 +13,7 @@ import {
 import { EXPENSE_CATEGORIES, getCategoryColor } from "@/lib/categories";
 import { formatCategoryLabel, formatCurrency, formatDate } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Field";
@@ -271,13 +272,15 @@ function TransactionsPageInner() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-xl font-semibold text-text-primary">Transactions</h1>
-        <Button size="sm" onClick={handleExport} loading={exporting}>
-          {!exporting && Icon.download({ size: 14 })}
-          Export CSV
-        </Button>
-      </div>
+      <PageHeader
+        title="Transactions"
+        action={
+          <Button size="sm" onClick={handleExport} loading={exporting}>
+            {!exporting && Icon.download({ size: 14 })}
+            Export CSV
+          </Button>
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <Input

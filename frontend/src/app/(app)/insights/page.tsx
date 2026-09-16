@@ -9,6 +9,7 @@ import {
 } from "@/lib/api";
 import { currentMonth, formatCurrency, formatMonthLabel } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { StatTile } from "@/components/ui/StatTile";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
@@ -89,10 +90,7 @@ export default function InsightsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-text-primary">Insights</h1>
-        <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-      </div>
+      <PageHeader title="Insights" action={<Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />} />
 
       {loading ? (
         <>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { type RecurringSeries, recurringApi } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { StatTile } from "@/components/ui/StatTile";
 import { Button } from "@/components/ui/Button";
 import { CadenceBadge, ConfidenceDots, StabilityBadge } from "@/components/ui/Badge";
@@ -130,13 +131,15 @@ export default function RecurringPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-text-primary">Recurring charges</h1>
-        <Button onClick={handleRefresh} loading={refreshing}>
-          {!refreshing && Icon.refresh({ size: 14 })}
-          Re-scan transactions
-        </Button>
-      </div>
+      <PageHeader
+        title="Recurring charges"
+        action={
+          <Button onClick={handleRefresh} loading={refreshing}>
+            {!refreshing && Icon.refresh({ size: 14 })}
+            Re-scan transactions
+          </Button>
+        }
+      />
 
       {loading ? (
         <>

@@ -10,7 +10,11 @@ type Theme = "light" | "dark";
 
 function currentTheme(): Theme {
   if (typeof document === "undefined") return "light";
-  return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+  const explicit = document.documentElement.getAttribute("data-theme");
+  if (explicit === "dark" || explicit === "light") return explicit;
+  // No explicit choice yet — the page is following the OS preference via the
+  // @media query in globals.css, so match that instead of defaulting to light.
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 export function ThemeToggle() {

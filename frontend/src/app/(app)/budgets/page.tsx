@@ -5,6 +5,7 @@ import { type Budget, budgetsApi } from "@/lib/api";
 import { EXPENSE_CATEGORIES } from "@/lib/categories";
 import { currentMonth, formatCategoryLabel, formatCurrency, formatMonthLabel } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Meter } from "@/components/ui/Meter";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Field";
@@ -81,10 +82,7 @@ export default function BudgetsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-text-primary">Budgets</h1>
-        <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-      </div>
+      <PageHeader title="Budgets" action={<Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />} />
 
       <Card title="Set a monthly budget">
         <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3">

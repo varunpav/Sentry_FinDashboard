@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { type Goal, goalsApi } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Meter } from "@/components/ui/Meter";
 import { StatTile } from "@/components/ui/StatTile";
 import { Button, IconButton } from "@/components/ui/Button";
@@ -175,7 +176,7 @@ export default function GoalsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold text-text-primary">Savings goals</h1>
+      <PageHeader title="Savings goals" />
 
       {loading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
