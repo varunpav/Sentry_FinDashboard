@@ -17,9 +17,15 @@ export function formatCompactCurrency(amount: number): string {
 
 export function formatCategoryLabel(category: string | null | undefined): string {
   if (!category) return "Other";
-  return category
+  return titleCase(category);
+}
+
+/** "credit_card" / "MONEY_MARKET" / "money market" -> "Credit Card" / "Money Market". */
+export function titleCase(value: string): string {
+  return value
     .toLowerCase()
-    .split("_")
+    .split(/[_\s]+/)
+    .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }

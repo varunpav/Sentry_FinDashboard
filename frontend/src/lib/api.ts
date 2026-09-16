@@ -403,6 +403,15 @@ export const goalsApi = {
       method: "POST",
       body: { name, target_amount: targetAmount, target_date: targetDate || null },
     }),
+  update: (id: number, updates: { name?: string; targetAmount?: number; targetDate?: string | null }) =>
+    apiFetch<Goal>(`/goals/${id}`, {
+      method: "PUT",
+      body: {
+        name: updates.name,
+        target_amount: updates.targetAmount,
+        target_date: updates.targetDate,
+      },
+    }),
   delete: (id: number) => apiFetch<void>(`/goals/${id}`, { method: "DELETE" }),
   contribute: (id: number, amount: number) =>
     apiFetch<Goal>(`/goals/${id}/contribute`, { method: "POST", body: { amount } }),

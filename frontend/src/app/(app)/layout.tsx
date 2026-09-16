@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { syncApi } from "@/lib/api";
-import { NavBar } from "@/components/NavBar";
+import { Sidebar } from "@/components/Sidebar";
+import { TopBar } from "@/components/TopBar";
 
 const AUTO_SYNC_NUDGE_MS = 5 * 60 * 1000;
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -33,16 +35,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (loading || !user) {
     return (
-      <div className="flex flex-1 items-center justify-center" style={{ background: "var(--background)" }}>
-        <p style={{ color: "var(--text-muted)" }}>Loading…</p>
+      <div className="flex flex-1 items-center justify-center bg-background">
+        <p className="text-text-muted">Loading…</p>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-full flex-1 flex-col" style={{ background: "var(--background)" }}>
-      <NavBar />
-      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">{children}</main>
+    <div className="flex min-h-full flex-1 bg-background">
+      <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
+      <div className="flex min-h-full flex-1 flex-col">
+        <TopBar onMenuClick={() => setMobileNavOpen(true)} />
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">{children}</main>
+      </div>
     </div>
   );
 }

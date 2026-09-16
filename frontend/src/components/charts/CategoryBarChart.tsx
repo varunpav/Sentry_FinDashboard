@@ -2,6 +2,8 @@
 
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatCategoryLabel, formatCurrency } from "@/lib/format";
+import { getCategoryColor } from "@/lib/categories";
+import { TooltipShell } from "./ChartTooltip";
 import type { CategorySpend } from "@/lib/api";
 
 interface TooltipPayloadItem {
@@ -14,20 +16,16 @@ function CategoryTooltip({ active, payload }: { active?: boolean; payload?: Tool
   const overBudget = item.budget != null && item.spent > item.budget;
 
   return (
-    <div
-      className="rounded-lg px-3 py-2 text-sm shadow-md"
-      style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
-    >
-      <p className="font-medium" style={{ color: "var(--text-primary)" }}>
-        {formatCategoryLabel(item.category)}
-      </p>
-      <p style={{ color: "var(--text-secondary)" }}>Spent: {formatCurrency(item.spent)}</p>
-      {item.budget != null && (
-        <p style={{ color: overBudget ? "var(--status-critical)" : "var(--text-secondary)" }}>
-          Budget: {formatCurrency(item.budget)} {overBudget && "— over budget"}
-        </p>
-      )}
-    </div>
+    <TooltipShell
+      heading={formatCategoryLabel(item.category)}
+      rows={[
+        { label: "Spent", value: formatCurrency(item.spent), color: getCategoryColor(item.category) },
+        ...(item.budget != null
+          ? [{ label: "Budget", value: formatCurrency(item.budget), muted: !overBudget }]
+          : []),
+      ]}
+      footnote={overBudget ? "Over budget" : undefined}
+    />
   );
 }
 
@@ -37,9 +35,7 @@ export function CategoryBarChart({ data }: { data: CategorySpend[] }) {
 
   if (chartData.length === 0) {
     return (
-      <p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
-        No spending recorded for this month yet.
-      </p>
+      <p className="py-8 text-center text-sm text-text-muted">No spending recorded for this month yet.</p>
     );
   }
 
@@ -60,7 +56,7 @@ export function CategoryBarChart({ data }: { data: CategorySpend[] }) {
           {chartData.map((entry, index) => {
             const overBudget = entry.budget != null && entry.spent > entry.budget;
             return (
-              <Cell key={index} fill={overBudget ? "var(--status-critical)" : "var(--series-1)"} />
+              <Cell key={index} fill={overBudget ? "var(--status-critical)" : getCategoryColor(entry.category)} />
             );
           })}
         </Bar>

@@ -10,8 +10,16 @@ import {
 import { currentMonth, formatCurrency, formatMonthLabel } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
 import { StatTile } from "@/components/ui/StatTile";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Field";
+import { ErrorState } from "@/components/ui/EmptyState";
+import { CardSkeleton, StatTileSkeleton } from "@/components/ui/Skeleton";
+import { Icon } from "@/components/ui/Icons";
 import { MonthComparisonChart } from "@/components/charts/MonthComparisonChart";
 import { MonthlyTrendChart } from "@/components/charts/MonthlyTrendChart";
+import { useToast } from "@/components/ui/Toast";
+
+const TREND_RANGES = [6, 12, 24] as const;
 
 function defaultCsvRange(): { start: string; end: string } {
   const now = new Date();
@@ -21,26 +29,32 @@ function defaultCsvRange(): { start: string; end: string } {
 
 export default function InsightsPage() {
   const [month, setMonth] = useState(currentMonth());
+  const [trendMonths, setTrendMonths] = useState<(typeof TREND_RANGES)[number]>(6);
   const [trend, setTrend] = useState<MonthlyTrendPoint[]>([]);
   const [comparison, setComparison] = useState<CategoryComparisonResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [csvRange, setCsvRange] = useState(defaultCsvRange);
   const [pdfYear, setPdfYear] = useState(new Date().getFullYear());
   const [exporting, setExporting] = useState<"csv" | "pdf" | null>(null);
+  const { showToast } = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const [trendRes, comparisonRes] = await Promise.all([
-        insightsApi.monthlyTrend(6),
+        insightsApi.monthlyTrend(trendMonths),
         insightsApi.categoryComparison(month),
       ]);
       setTrend(trendRes.points);
       setComparison(comparisonRes);
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
-  }, [month]);
+  }, [month, trendMonths]);
 
   useEffect(() => {
     load();
@@ -50,6 +64,8 @@ export default function InsightsPage() {
     setExporting("csv");
     try {
       await exportApi.transactionsCsv(csvRange.start, csvRange.end);
+    } catch {
+      showToast("CSV export failed.", "error");
     } finally {
       setExporting(null);
     }
@@ -59,6 +75,8 @@ export default function InsightsPage() {
     setExporting("pdf");
     try {
       await exportApi.summaryPdf(pdfYear);
+    } catch {
+      showToast("PDF export failed.", "error");
     } finally {
       setExporting(null);
     }
@@ -72,22 +90,23 @@ export default function InsightsPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-          Insights
-        </h1>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="rounded-md px-3 py-1.5 text-sm"
-          style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-        />
+        <h1 className="text-xl font-semibold text-text-primary">Insights</h1>
+        <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
       </div>
 
       {loading ? (
-        <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          Loading…
-        </p>
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <StatTileSkeleton />
+            <StatTileSkeleton />
+            <StatTileSkeleton />
+          </div>
+          <CardSkeleton lines={5} />
+        </>
+      ) : error ? (
+        <Card>
+          <ErrorState onRetry={load} />
+        </Card>
       ) : (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -105,66 +124,66 @@ export default function InsightsPage() {
             />
           </div>
 
-          <Card title="Spending trend, last 6 months">
+          <Card
+            title={`Spending trend, last ${trendMonths} months`}
+            action={
+              <div className="flex gap-1 rounded-md border border-border p-0.5">
+                {TREND_RANGES.map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setTrendMonths(m)}
+                    className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                      trendMonths === m ? "bg-surface-2 text-series-1" : "text-text-muted hover:text-text-secondary"
+                    }`}
+                  >
+                    {m}mo
+                  </button>
+                ))}
+              </div>
+            }
+          >
             <MonthlyTrendChart data={trend} />
           </Card>
 
-          <Card title={`${formatMonthLabel(month)} vs ${comparison ? formatMonthLabel(comparison.previous_month) : "last month"}, by category`}>
+          <Card
+            title={`${formatMonthLabel(month)} vs ${comparison ? formatMonthLabel(comparison.previous_month) : "last month"}, by category`}
+          >
             <MonthComparisonChart data={comparison?.categories ?? []} />
           </Card>
 
           <Card title="Export">
             <div className="flex flex-wrap items-end gap-6">
               <div className="flex flex-wrap items-end gap-3">
-                <label className="flex flex-col gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-                  From
-                  <input
-                    type="date"
-                    value={csvRange.start}
-                    onChange={(e) => setCsvRange((r) => ({ ...r, start: e.target.value }))}
-                    className="rounded-md px-3 py-1.5 text-sm"
-                    style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-                  To
-                  <input
-                    type="date"
-                    value={csvRange.end}
-                    onChange={(e) => setCsvRange((r) => ({ ...r, end: e.target.value }))}
-                    className="rounded-md px-3 py-1.5 text-sm"
-                    style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-                  />
-                </label>
-                <button
-                  onClick={handleCsvExport}
-                  disabled={exporting !== null}
-                  className="rounded-md px-4 py-2 text-sm font-medium disabled:opacity-60"
-                  style={{ border: "1px solid var(--border)", color: "var(--text-secondary)" }}
-                >
-                  {exporting === "csv" ? "Downloading…" : "Download CSV"}
-                </button>
+                <Input
+                  label="From"
+                  type="date"
+                  value={csvRange.start}
+                  onChange={(e) => setCsvRange((r) => ({ ...r, start: e.target.value }))}
+                />
+                <Input
+                  label="To"
+                  type="date"
+                  value={csvRange.end}
+                  onChange={(e) => setCsvRange((r) => ({ ...r, end: e.target.value }))}
+                />
+                <Button onClick={handleCsvExport} loading={exporting === "csv"} disabled={exporting !== null && exporting !== "csv"}>
+                  {exporting !== "csv" && Icon.download({ size: 14 })}
+                  Download CSV
+                </Button>
               </div>
 
               <div className="flex flex-wrap items-end gap-3">
-                <label className="flex flex-col gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-                  Year
-                  <input
-                    type="number"
-                    value={pdfYear}
-                    onChange={(e) => setPdfYear(Number(e.target.value))}
-                    className="w-24 rounded-md px-3 py-1.5 text-sm"
-                    style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-                  />
-                </label>
-                <button
-                  onClick={handlePdfExport}
-                  disabled={exporting !== null}
-                  className="rounded-md px-4 py-2 text-sm font-medium disabled:opacity-60"
-                  style={{ border: "1px solid var(--border)", color: "var(--text-secondary)" }}
-                >
-                  {exporting === "pdf" ? "Downloading…" : "Download PDF summary"}
-                </button>
+                <Input
+                  label="Year"
+                  type="number"
+                  value={pdfYear}
+                  onChange={(e) => setPdfYear(Number(e.target.value))}
+                  wrapperClassName="w-24"
+                />
+                <Button onClick={handlePdfExport} loading={exporting === "pdf"} disabled={exporting !== null && exporting !== "pdf"}>
+                  {exporting !== "pdf" && Icon.download({ size: 14 })}
+                  Download PDF summary
+                </Button>
               </div>
             </div>
           </Card>

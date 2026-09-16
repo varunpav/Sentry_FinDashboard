@@ -2,6 +2,7 @@
 
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatCompactCurrency, formatCurrency, formatMonthLabel } from "@/lib/format";
+import { TooltipShell } from "./ChartTooltip";
 import type { MonthlyTrendPoint } from "@/lib/api";
 
 interface TooltipPayloadItem {
@@ -12,25 +13,16 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: Tooltip
   if (!active || !payload?.length) return null;
   const item = payload[0].payload;
   return (
-    <div
-      className="rounded-lg px-3 py-2 text-sm shadow-md"
-      style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
-    >
-      <p style={{ color: "var(--text-secondary)" }}>{formatMonthLabel(item.month)}</p>
-      <p className="font-medium" style={{ color: "var(--text-primary)" }}>
-        {formatCurrency(item.total_spent)}
-      </p>
-    </div>
+    <TooltipShell
+      heading={formatMonthLabel(item.month)}
+      rows={[{ label: "Spent", value: formatCurrency(item.total_spent) }]}
+    />
   );
 }
 
 export function MonthlyTrendChart({ data }: { data: MonthlyTrendPoint[] }) {
   if (data.length === 0) {
-    return (
-      <p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
-        No spending history yet.
-      </p>
-    );
+    return <p className="py-8 text-center text-sm text-text-muted">No spending history yet.</p>;
   }
 
   return (
