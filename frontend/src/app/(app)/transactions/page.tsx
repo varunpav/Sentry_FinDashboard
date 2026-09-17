@@ -288,7 +288,7 @@ function TransactionsPageInner() {
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search merchant…"
-          className="w-48"
+          className="min-w-[160px] flex-1"
         />
         <Select
           value={category}
@@ -296,6 +296,7 @@ function TransactionsPageInner() {
             setPage(1);
             setCategory(e.target.value);
           }}
+          className="w-44 shrink-0"
         >
           <option value="">All categories</option>
           {EXPENSE_CATEGORIES.map((c) => (
@@ -310,6 +311,7 @@ function TransactionsPageInner() {
             setPage(1);
             setAccountId(e.target.value ? Number(e.target.value) : undefined);
           }}
+          className="w-44 shrink-0"
         >
           <option value="">All accounts</option>
           {accounts.map((a) => (
@@ -319,24 +321,26 @@ function TransactionsPageInner() {
             </option>
           ))}
         </Select>
-        <Input
-          type="date"
-          value={startDate}
-          onChange={(e) => {
-            setPage(1);
-            setStartDate(e.target.value);
-          }}
-        />
-        <span className="text-text-muted">–</span>
-        <Input
-          type="date"
-          value={endDate}
-          onChange={(e) => {
-            setPage(1);
-            setEndDate(e.target.value);
-          }}
-        />
-        <label className="ml-auto flex items-center gap-2 text-sm text-text-secondary">
+        <div className="flex shrink-0 items-center gap-2">
+          <Input
+            type="date"
+            value={startDate}
+            onChange={(e) => {
+              setPage(1);
+              setStartDate(e.target.value);
+            }}
+          />
+          <span className="text-text-muted">–</span>
+          <Input
+            type="date"
+            value={endDate}
+            onChange={(e) => {
+              setPage(1);
+              setEndDate(e.target.value);
+            }}
+          />
+        </div>
+        <label className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-sm text-text-secondary">
           <input
             type="checkbox"
             checked={flaggedOnly}
