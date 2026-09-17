@@ -2,6 +2,7 @@
 
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatCompactCurrency, formatCurrency, formatDate } from "@/lib/format";
+import { TooltipShell } from "./ChartTooltip";
 import type { DailySpendPoint } from "@/lib/api";
 
 interface TooltipPayloadItem {
@@ -12,25 +13,16 @@ function SpendTooltip({ active, payload }: { active?: boolean; payload?: Tooltip
   if (!active || !payload?.length) return null;
   const item = payload[0].payload;
   return (
-    <div
-      className="rounded-lg px-3 py-2 text-sm shadow-md"
-      style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
-    >
-      <p style={{ color: "var(--text-secondary)" }}>{formatDate(item.date)}</p>
-      <p className="font-medium" style={{ color: "var(--text-primary)" }}>
-        {formatCurrency(item.amount)}
-      </p>
-    </div>
+    <TooltipShell
+      heading={formatDate(item.date)}
+      rows={[{ label: "Spent", value: formatCurrency(item.amount) }]}
+    />
   );
 }
 
 export function DailySpendLineChart({ data }: { data: DailySpendPoint[] }) {
   if (data.length === 0) {
-    return (
-      <p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
-        No daily spending to chart yet.
-      </p>
-    );
+    return <p className="py-8 text-center text-sm text-text-muted">No daily spending to chart yet.</p>;
   }
 
   return (

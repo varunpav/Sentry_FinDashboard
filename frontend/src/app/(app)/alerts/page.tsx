@@ -1,36 +1,59 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { type FraudFeedbackSummary, type FraudFlag, fraudApi } from "@/lib/api";
 import { formatCategoryLabel, formatCurrency, formatDate } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
-import { StatusBadge } from "@/components/ui/Badge";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { StatusBadge, SeverityBadge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Tabs, type TabItem } from "@/components/ui/Tabs";
+import { EmptyState, ErrorState } from "@/components/ui/EmptyState";
+import { CardSkeleton } from "@/components/ui/Skeleton";
+import { Icon } from "@/components/ui/Icons";
+import { useToast } from "@/components/ui/Toast";
 
-const TABS: { key: string | undefined; label: string }[] = [
-  { key: "pending", label: "Pending" },
-  { key: "confirmed", label: "Confirmed" },
-  { key: "dismissed", label: "Dismissed" },
-  { key: undefined, label: "All" },
-];
+type TabKey = "pending" | "confirmed" | "dismissed" | undefined;
+
+// The backend never exposes its scoring cutoff, so severity here is a relative
+// ranking within whatever's currently on screen (lower/more-negative
+// decision_function = more anomalous — see backend/app/services/fraud_service.py),
+// not an absolute risk score. Good enough for "which of these needs my attention
+// first," not meant to be precise for a list of one or two.
+function computeSeverities(flags: FraudFlag[]): Map<number, "critical" | "serious" | "warning"> {
+  const sorted = [...flags].sort((a, b) => a.anomaly_score - b.anomaly_score);
+  const map = new Map<number, "critical" | "serious" | "warning">();
+  sorted.forEach((f, i) => {
+    const frac = sorted.length > 1 ? i / (sorted.length - 1) : 0;
+    map.set(f.id, frac < 0.34 ? "critical" : frac < 0.67 ? "serious" : "warning");
+  });
+  return map;
+}
 
 export default function AlertsPage() {
-  const [tab, setTab] = useState<string | undefined>("pending");
+  const [tab, setTab] = useState<TabKey>("pending");
   const [flags, setFlags] = useState<FraudFlag[]>([]);
   const [feedback, setFeedback] = useState<FraudFeedbackSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const { showToast } = useToast();
 
-  const load = useCallback(async (status?: string) => {
+  const load = useCallback(async (status?: TabKey) => {
     setLoading(true);
+    setError(false);
     try {
       setFlags(await fraudApi.listFlags(status));
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
   }, []);
 
   const loadFeedback = useCallback(async () => {
-    setFeedback(await fraudApi.feedback());
+    fraudApi.feedback().then(setFeedback).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -45,104 +68,103 @@ export default function AlertsPage() {
     setUpdatingId(id);
     try {
       await fraudApi.updateStatus(id, status);
+      showToast(status === "confirmed" ? "Marked as confirmed fraud." : "Dismissed.", "success");
       await load(tab);
       await loadFeedback();
+    } catch {
+      showToast("Failed to update alert.", "error");
     } finally {
       setUpdatingId(null);
     }
   }
 
+  const severities = useMemo(() => computeSeverities(flags), [flags]);
+  const sortedFlags = useMemo(
+    () => [...flags].sort((a, b) => a.anomaly_score - b.anomaly_score),
+    [flags]
+  );
+
+  const tabs: TabItem<TabKey>[] = [
+    { key: "pending", label: "Pending", count: feedback?.pending_count },
+    { key: "confirmed", label: "Confirmed", count: feedback?.confirmed_count },
+    { key: "dismissed", label: "Dismissed", count: feedback?.dismissed_count },
+    { key: undefined, label: "All" },
+  ];
+
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-        Fraud alerts
-      </h1>
+      <PageHeader title="Fraud alerts" />
 
       {feedback && (feedback.dismissed_count > 0 || feedback.confirmed_count > 0) && (
-        <div className="text-sm" style={{ color: "var(--text-muted)" }}>
-          <p>
+        <Card className="!py-3">
+          <p className="text-sm text-text-secondary">
             Learned from {feedback.dismissed_count} dismissal{feedback.dismissed_count === 1 ? "" : "s"} ·{" "}
             {feedback.confirmed_count} confirmed
           </p>
           {feedback.suppressed_merchants.length > 0 && (
-            <p className="mt-0.5">
+            <p className="mt-0.5 text-sm text-text-muted">
               Raised the bar for:{" "}
               {feedback.suppressed_merchants.map((m) => `${m.merchant} (${m.dismissals})`).join(", ")}
             </p>
           )}
-        </div>
+        </Card>
       )}
 
-      <div className="flex gap-1">
-        {TABS.map((t) => (
-          <button
-            key={t.label}
-            onClick={() => setTab(t.key)}
-            className="rounded-md px-3 py-1.5 text-sm font-medium"
-            style={{
-              color: tab === t.key ? "var(--series-1)" : "var(--text-secondary)",
-              background: tab === t.key ? "var(--surface-1)" : "transparent",
-              border: tab === t.key ? "1px solid var(--border)" : "1px solid transparent",
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs items={tabs} active={tab} onChange={setTab} />
 
       {loading ? (
-        <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          Loading…
-        </p>
-      ) : flags.length === 0 ? (
+        <CardSkeleton lines={4} />
+      ) : error ? (
         <Card>
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            No alerts in this view.
-          </p>
+          <ErrorState onRetry={() => load(tab)} />
+        </Card>
+      ) : sortedFlags.length === 0 ? (
+        <Card>
+          <EmptyState icon="shield" title="No alerts in this view" description="Nothing here needs your attention." />
         </Card>
       ) : (
         <div className="flex flex-col gap-3">
-          {flags.map((f) => (
+          {sortedFlags.map((f) => (
             <Card key={f.id}>
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium" style={{ color: "var(--text-primary)" }}>
-                      {f.merchant_name || "Unknown merchant"}
-                    </p>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium text-text-primary">{f.merchant_name || "Unknown merchant"}</p>
+                    {f.status === "pending" && <SeverityBadge severity={severities.get(f.id) ?? "warning"} />}
                     <StatusBadge status={f.status} />
                   </div>
-                  <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                  <p className="text-sm text-text-muted">
                     {formatDate(f.date)} · {formatCategoryLabel(f.category_primary)}
                   </p>
-                  <ul className="mt-2 flex flex-col gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+                  <ul className="mt-2 flex flex-col gap-1 text-sm text-text-secondary">
                     {f.reasons.map((r, i) => (
                       <li key={i}>• {r}</li>
                     ))}
                   </ul>
+                  <Link
+                    href={`/transactions?flagged=1&search=${encodeURIComponent(f.merchant_name || "")}`}
+                    className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-series-1"
+                  >
+                    View transaction {Icon.externalLink({ size: 12 })}
+                  </Link>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-2">
-                  <span className="text-lg font-semibold" style={{ color: "var(--status-critical)" }}>
+                  <span className="tabular text-lg font-semibold text-status-critical">
                     {formatCurrency(f.amount)}
                   </span>
                   {f.status === "pending" && (
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => handleUpdate(f.id, "dismissed")}
-                        disabled={updatingId === f.id}
-                        className="rounded-md px-3 py-1 text-xs font-medium disabled:opacity-60"
-                        style={{ border: "1px solid var(--border)", color: "var(--text-secondary)" }}
-                      >
+                      <Button size="sm" onClick={() => handleUpdate(f.id, "dismissed")} disabled={updatingId === f.id}>
                         Dismiss
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
                         onClick={() => handleUpdate(f.id, "confirmed")}
                         disabled={updatingId === f.id}
-                        className="rounded-md px-3 py-1 text-xs font-medium text-white disabled:opacity-60"
-                        style={{ background: "var(--status-critical)" }}
                       >
                         Confirm fraud
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </div>

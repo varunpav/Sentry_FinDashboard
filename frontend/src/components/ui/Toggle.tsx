@@ -14,14 +14,8 @@ export function Toggle({
   return (
     <label className="flex items-start justify-between gap-4 py-3">
       <div>
-        <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-          {label}
-        </p>
-        {description && (
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            {description}
-          </p>
-        )}
+        <p className="text-sm font-medium text-text-primary">{label}</p>
+        {description && <p className="text-sm text-text-muted">{description}</p>}
       </div>
       <button
         type="button"
@@ -29,8 +23,9 @@ export function Toggle({
         aria-checked={checked}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className="relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-60"
-        style={{ background: checked ? "var(--series-1)" : "var(--gridline)" }}
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-60 ${
+          checked ? "bg-series-1" : "bg-gridline"
+        }`}
       >
         <span
           className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform"

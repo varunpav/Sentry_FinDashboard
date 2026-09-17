@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth, authErrorMessage } from "@/lib/auth-context";
+import { Input } from "@/components/ui/Field";
+import { Button } from "@/components/ui/Button";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -29,61 +31,32 @@ export default function LoginPage() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <h2 className="text-lg font-medium" style={{ color: "var(--text-primary)" }}>
+      <h2 className="text-lg font-medium text-text-primary">Log in</h2>
+
+      <Input label="Email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+      <Input
+        label="Password"
+        type="password"
+        required
+        minLength={8}
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      />
+
+      {error && <p className="text-sm text-status-critical">{error}</p>}
+
+      <Button type="submit" variant="primary" loading={submitting} className="mt-2 w-full">
         Log in
-      </h2>
+      </Button>
 
-      <label className="flex flex-col gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-        Email
-        <input
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="rounded-md px-3 py-2 text-sm outline-none focus:ring-2"
-          style={{
-            background: "var(--surface-2)",
-            border: "1px solid var(--border)",
-            color: "var(--text-primary)",
-          }}
-        />
-      </label>
+      <p className="rounded-md bg-surface-2 px-3 py-2 text-center text-xs text-text-muted">
+        Demo login: <span className="tabular text-text-secondary">demo@sentryapp.dev</span> /{" "}
+        <span className="tabular text-text-secondary">demo12345</span>
+      </p>
 
-      <label className="flex flex-col gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-        Password
-        <input
-          type="password"
-          required
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="rounded-md px-3 py-2 text-sm outline-none focus:ring-2"
-          style={{
-            background: "var(--surface-2)",
-            border: "1px solid var(--border)",
-            color: "var(--text-primary)",
-          }}
-        />
-      </label>
-
-      {error && (
-        <p className="text-sm" style={{ color: "var(--status-critical)" }}>
-          {error}
-        </p>
-      )}
-
-      <button
-        type="submit"
-        disabled={submitting}
-        className="mt-2 rounded-md px-3 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-60"
-        style={{ background: "var(--series-1)" }}
-      >
-        {submitting ? "Logging in…" : "Log in"}
-      </button>
-
-      <p className="text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+      <p className="text-center text-sm text-text-secondary">
         No account?{" "}
-        <Link href="/register" className="font-medium" style={{ color: "var(--series-1)" }}>
+        <Link href="/register" className="font-medium text-series-1">
           Register
         </Link>
       </p>

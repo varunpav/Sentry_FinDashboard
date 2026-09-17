@@ -9,8 +9,14 @@ import {
   syncApi,
 } from "@/lib/api";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { IntervalSlider } from "@/components/ui/IntervalSlider";
 import { Toggle } from "@/components/ui/Toggle";
+import { Button } from "@/components/ui/Button";
+import { Input, Select } from "@/components/ui/Field";
+import { CardSkeleton } from "@/components/ui/Skeleton";
+import { Icon } from "@/components/ui/Icons";
+import { useToast } from "@/components/ui/Toast";
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "never";
@@ -31,10 +37,10 @@ const TYPE_LABEL: Record<NotificationLogEntry["type"], string> = {
   digest: "Weekly digest",
 };
 
-const STATUS_COLOR: Record<NotificationLogEntry["status"], string> = {
-  sent: "var(--status-good-text)",
-  skipped: "var(--text-muted)",
-  failed: "var(--status-critical)",
+const STATUS_CLASS: Record<NotificationLogEntry["status"], string> = {
+  sent: "text-status-good-text",
+  skipped: "text-text-muted",
+  failed: "text-status-critical",
 };
 
 function formatSentAt(iso: string): string {
@@ -52,12 +58,10 @@ export default function NotificationSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const [runMessage, setRunMessage] = useState<string | null>(null);
 
   const [syncPrefs, setSyncPrefs] = useState<SyncPreferences | null>(null);
   const [syncSaving, setSyncSaving] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -86,13 +90,12 @@ export default function NotificationSettingsPage() {
   async function handleSave() {
     if (!prefs) return;
     setSaving(true);
-    setSaveMessage(null);
     try {
       const updated = await notificationsApi.updatePreferences(prefs);
       setPrefs(updated);
-      setSaveMessage("Preferences saved.");
+      showToast("Preferences saved.", "success");
     } catch {
-      setSaveMessage("Failed to save preferences.");
+      showToast("Failed to save preferences.", "error");
     } finally {
       setSaving(false);
     }
@@ -100,19 +103,19 @@ export default function NotificationSettingsPage() {
 
   async function handleRun() {
     setRunning(true);
-    setRunMessage(null);
     try {
       const result = await notificationsApi.run();
       const total = result.budget + result.bill + result.fraud + result.digest;
-      setRunMessage(
+      showToast(
         total === 0
           ? "Ran check — nothing new to notify about."
           : `Ran check — ${total} new notification(s): ${result.budget} budget, ${result.bill} bill, ${result.fraud} fraud, ${result.digest} digest.` +
-              (result.resend_configured ? "" : " (RESEND_API_KEY not set — logged as skipped, not emailed.)")
+              (result.resend_configured ? "" : " (RESEND_API_KEY not set — logged as skipped, not emailed.)"),
+        "success"
       );
       await load();
     } catch {
-      setRunMessage("Run failed.");
+      showToast("Run failed.", "error");
     } finally {
       setRunning(false);
     }
@@ -121,48 +124,41 @@ export default function NotificationSettingsPage() {
   async function handleSyncSave() {
     if (!syncPrefs) return;
     setSyncSaving(true);
-    setSyncMessage(null);
     try {
       const updated = await syncApi.updatePreferences(syncPrefs.auto_sync_enabled, syncPrefs.interval_hours);
       setSyncPrefs(updated);
-      setSyncMessage("Saved.");
+      showToast("Sync settings saved.", "success");
     } catch {
-      setSyncMessage("Failed to save.");
+      showToast("Failed to save sync settings.", "error");
     } finally {
       setSyncSaving(false);
     }
   }
 
   if (loading || !prefs || !syncPrefs) {
-    return <p style={{ color: "var(--text-muted)" }}>Loading notification settings…</p>;
+    return <CardSkeleton lines={6} />;
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-          Notification settings
-        </h1>
-        <button
-          onClick={handleRun}
-          disabled={running}
-          className="rounded-md px-4 py-2 text-sm font-medium disabled:opacity-60"
-          style={{ border: "1px solid var(--border)", color: "var(--text-secondary)" }}
-        >
-          {running ? "Running…" : "Run check now"}
-        </button>
-      </div>
-
-      {runMessage && <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{runMessage}</p>}
+      <PageHeader
+        title="Notification settings"
+        action={
+          <Button onClick={handleRun} loading={running}>
+            {!running && Icon.bell({ size: 14 })}
+            Run check now
+          </Button>
+        }
+      />
 
       <Card>
-        <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          <strong style={{ color: "var(--text-secondary)" }}>Alerts only fire after a sync</strong> —
-          notifications are evaluated at the end of each sync, so how often you sync sets the floor
-          on how quickly any alert can reach you. Turn on automatic sync below for a background
-          check on your chosen interval, or use &ldquo;Run check now&rdquo; above for an immediate
-          one-off. Emails are sent via{" "}
-          <a href="https://resend.com" target="_blank" rel="noreferrer" style={{ color: "var(--series-1)" }}>
+        <p className="text-sm text-text-muted">
+          <strong className="text-text-secondary">Alerts only fire after a sync</strong> — notifications
+          are evaluated at the end of each sync, so how often you sync sets the floor on how quickly
+          any alert can reach you. Turn on automatic sync below for a background check on your chosen
+          interval, or use &ldquo;Run check now&rdquo; above for an immediate one-off. Emails are sent
+          via{" "}
+          <a href="https://resend.com" target="_blank" rel="noreferrer" className="text-series-1">
             Resend
           </a>
           . Without a configured API key, checks still run and log normally, they just don&apos;t send.
@@ -170,7 +166,7 @@ export default function NotificationSettingsPage() {
       </Card>
 
       <Card title="Automatic sync">
-        <div className="flex flex-col divide-y" style={{ borderColor: "var(--gridline)" }}>
+        <div className="flex flex-col divide-y divide-gridline">
           <Toggle
             label="Sync automatically"
             description="Sync linked accounts in the background on the interval below, even while you're not using the app."
@@ -183,9 +179,9 @@ export default function NotificationSettingsPage() {
                 hours={syncPrefs.interval_hours}
                 onChange={(hours) => setSyncPrefs((prev) => (prev ? { ...prev, interval_hours: hours } : prev))}
               />
-              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                Auto-sync only runs while the app's backend is running — a 2-day interval on a
-                machine that's been off will catch up on the next check, not run precisely on
+              <p className="text-xs text-text-muted">
+                Auto-sync only runs while the app&apos;s backend is running — a 2-day interval on a
+                machine that&apos;s been off will catch up on the next check, not run precisely on
                 schedule.
               </p>
             </div>
@@ -193,25 +189,19 @@ export default function NotificationSettingsPage() {
         </div>
 
         <div className="mt-4 flex items-center gap-3">
-          <button
-            onClick={handleSyncSave}
-            disabled={syncSaving}
-            className="rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            style={{ background: "var(--series-1)" }}
-          >
-            {syncSaving ? "Saving…" : "Save sync settings"}
-          </button>
-          {syncMessage && <span className="text-sm" style={{ color: "var(--text-secondary)" }}>{syncMessage}</span>}
+          <Button variant="primary" onClick={handleSyncSave} loading={syncSaving}>
+            Save sync settings
+          </Button>
         </div>
 
-        <p className="mt-4 text-xs" style={{ color: "var(--text-muted)" }}>
+        <p className="mt-4 text-xs text-text-muted">
           Last synced: {formatWhen(syncPrefs.last_auto_sync_at)}
           {syncPrefs.last_auto_sync_status && ` (${syncPrefs.last_auto_sync_status})`}
         </p>
       </Card>
 
       <Card title="Preferences">
-        <div className="flex flex-col divide-y" style={{ borderColor: "var(--gridline)" }}>
+        <div className="flex flex-col divide-y divide-gridline">
           <Toggle
             label="Budget threshold alerts"
             description="Email when a category's spend crosses a percentage of its monthly limit."
@@ -220,22 +210,17 @@ export default function NotificationSettingsPage() {
           />
           {prefs.budget_alerts_enabled && (
             <div className="flex items-center gap-3 py-3 pl-4">
-              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                Alert at
-              </span>
-              <input
+              <span className="text-sm text-text-secondary">Alert at</span>
+              <Input
                 type="number"
                 min={1}
                 max={100}
                 value={prefs.budget_threshold_pct}
                 onChange={(e) => update("budget_threshold_pct", Number(e.target.value))}
-                className="w-20 rounded-md px-2 py-1 text-sm"
-                style={{ border: "1px solid var(--border)", background: "var(--surface-2)", color: "var(--text-primary)" }}
+                className="w-20"
               />
-              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                % of budget
-              </span>
-              <label className="ml-4 flex items-center gap-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+              <span className="text-sm text-text-secondary">% of budget</span>
+              <label className="ml-4 flex items-center gap-2 text-sm text-text-secondary">
                 <input
                   type="checkbox"
                   checked={prefs.budget_alert_at_100}
@@ -254,21 +239,16 @@ export default function NotificationSettingsPage() {
           />
           {prefs.bill_reminders_enabled && (
             <div className="flex items-center gap-3 py-3 pl-4">
-              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                Remind
-              </span>
-              <input
+              <span className="text-sm text-text-secondary">Remind</span>
+              <Input
                 type="number"
                 min={0}
                 max={30}
                 value={prefs.bill_lead_days}
                 onChange={(e) => update("bill_lead_days", Number(e.target.value))}
-                className="w-20 rounded-md px-2 py-1 text-sm"
-                style={{ border: "1px solid var(--border)", background: "var(--surface-2)", color: "var(--text-primary)" }}
+                className="w-20"
               />
-              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                day(s) before due
-              </span>
+              <span className="text-sm text-text-secondary">day(s) before due</span>
             </div>
           )}
 
@@ -287,70 +267,54 @@ export default function NotificationSettingsPage() {
           />
           {prefs.weekly_digest_enabled && (
             <div className="flex items-center gap-3 py-3 pl-4">
-              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                Digest week resets on
-              </span>
-              <select
+              <span className="text-sm text-text-secondary">Digest week resets on</span>
+              <Select
                 value={prefs.weekly_digest_day}
                 onChange={(e) => update("weekly_digest_day", Number(e.target.value))}
-                className="rounded-md px-2 py-1 text-sm"
-                style={{ border: "1px solid var(--border)", background: "var(--surface-2)", color: "var(--text-primary)" }}
               >
                 {DAY_LABELS.map((day, i) => (
                   <option key={day} value={i}>
                     {day}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           )}
         </div>
 
         <div className="mt-4 flex items-center gap-3">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            style={{ background: "var(--series-1)" }}
-          >
-            {saving ? "Saving…" : "Save preferences"}
-          </button>
-          {saveMessage && <span className="text-sm" style={{ color: "var(--text-secondary)" }}>{saveMessage}</span>}
+          <Button variant="primary" onClick={handleSave} loading={saving}>
+            Save preferences
+          </Button>
         </div>
       </Card>
 
-      <Card title="Recent activity">
+      <Card title="Recent activity" padded={false}>
         {log.length === 0 ? (
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>No notifications logged yet.</p>
+          <p className="p-5 text-sm text-text-muted">No notifications logged yet.</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ color: "var(--text-muted)" }}>
-                <th className="pb-2 text-left font-medium">When</th>
-                <th className="pb-2 text-left font-medium">Type</th>
-                <th className="pb-2 text-left font-medium">Status</th>
-                <th className="pb-2 text-left font-medium">Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {log.map((entry) => (
-                <tr key={entry.id} style={{ borderTop: "1px solid var(--gridline)" }}>
-                  <td className="py-2" style={{ color: "var(--text-secondary)" }}>
-                    {formatSentAt(entry.sent_at)}
-                  </td>
-                  <td className="py-2" style={{ color: "var(--text-primary)" }}>
-                    {TYPE_LABEL[entry.type]}
-                  </td>
-                  <td className="py-2" style={{ color: STATUS_COLOR[entry.status] }}>
-                    {entry.status}
-                  </td>
-                  <td className="py-2" style={{ color: "var(--text-muted)" }}>
-                    {entry.detail ?? "—"}
-                  </td>
+          <div className="overflow-x-auto scroll-thin">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-text-muted">
+                  <th className="px-5 py-3 text-left font-medium">When</th>
+                  <th className="px-5 py-3 text-left font-medium">Type</th>
+                  <th className="px-5 py-3 text-left font-medium">Status</th>
+                  <th className="px-5 py-3 text-left font-medium">Detail</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {log.map((entry) => (
+                  <tr key={entry.id} className="border-t border-gridline">
+                    <td className="px-5 py-3 text-text-secondary">{formatSentAt(entry.sent_at)}</td>
+                    <td className="px-5 py-3 text-text-primary">{TYPE_LABEL[entry.type]}</td>
+                    <td className={`px-5 py-3 ${STATUS_CLASS[entry.status]}`}>{entry.status}</td>
+                    <td className="px-5 py-3 text-text-muted">{entry.detail ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

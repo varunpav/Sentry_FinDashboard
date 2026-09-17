@@ -21,18 +21,11 @@ export function IntervalSlider({
         step={1}
         value={index}
         onChange={(e) => onChange(STOPS[Number(e.target.value)])}
-        className="w-full"
-        style={{ accentColor: "var(--series-1)" }}
+        className="w-full accent-series-1"
       />
       <div className="flex justify-between text-xs">
         {LABELS.map((label, i) => (
-          <span
-            key={label}
-            style={{
-              color: i === index ? "var(--series-1)" : "var(--text-muted)",
-              fontWeight: i === index ? 600 : 400,
-            }}
-          >
+          <span key={label} className={i === index ? "font-semibold text-series-1" : "text-text-muted"}>
             {label}
           </span>
         ))}

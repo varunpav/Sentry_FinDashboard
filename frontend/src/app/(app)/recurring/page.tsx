@@ -4,30 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { type RecurringSeries, recurringApi } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { StatTile } from "@/components/ui/StatTile";
-
-const CADENCE_LABEL: Record<RecurringSeries["cadence"], string> = {
-  weekly: "Weekly",
-  biweekly: "Every 2 weeks",
-  monthly: "Monthly",
-  quarterly: "Quarterly",
-  annual: "Annually",
-};
-
-function CadenceBadge({ cadence }: { cadence: RecurringSeries["cadence"] }) {
-  return (
-    <span
-      className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium"
-      style={{
-        color: "var(--series-1)",
-        background: "var(--surface-2)",
-        border: "1px solid var(--series-1)",
-      }}
-    >
-      {CADENCE_LABEL[cadence]}
-    </span>
-  );
-}
+import { Button } from "@/components/ui/Button";
+import { CadenceBadge, ConfidenceDots, StabilityBadge } from "@/components/ui/Badge";
+import { EmptyState, ErrorState } from "@/components/ui/EmptyState";
+import { CardSkeleton, StatTileSkeleton } from "@/components/ui/Skeleton";
+import { Icon } from "@/components/ui/Icons";
+import { useToast } from "@/components/ui/Toast";
 
 function daysUntil(dateStr: string): number {
   const today = new Date();
@@ -39,18 +23,18 @@ function daysUntil(dateStr: string): number {
 function DueLabel({ dateStr }: { dateStr: string }) {
   const days = daysUntil(dateStr);
   let text = formatDate(dateStr);
-  let tone = "var(--text-secondary)";
+  let className = "text-text-secondary";
   if (days < 0) {
     text = `${formatDate(dateStr)} (overdue)`;
-    tone = "var(--status-critical)";
+    className = "text-status-critical";
   } else if (days === 0) {
     text = "Due today";
-    tone = "var(--status-warning)";
+    className = "text-status-warning";
   } else if (days <= 7) {
     text = `${formatDate(dateStr)} (in ${days}d)`;
-    tone = "var(--status-warning)";
+    className = "text-status-warning";
   }
-  return <span style={{ color: tone }}>{text}</span>;
+  return <span className={className}>{text}</span>;
 }
 
 function SeriesRow({
@@ -63,30 +47,24 @@ function SeriesRow({
   busy: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-3" style={{ borderTop: "1px solid var(--gridline)" }}>
+    <div className="flex items-center justify-between gap-4 border-t border-gridline py-3 first:border-0">
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="truncate font-medium" style={{ color: "var(--text-primary)" }}>
-            {series.display_name}
-          </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate font-medium text-text-primary">{series.display_name}</p>
           <CadenceBadge cadence={series.cadence} />
+          <StabilityBadge stability={series.amount_stability} />
+          <ConfidenceDots confidence={series.confidence} />
         </div>
-        <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          Next due: <DueLabel dateStr={series.next_due_date} />
+        <p className="text-sm text-text-muted">
+          Next due: <DueLabel dateStr={series.next_due_date} /> · {series.occurrences} charge
+          {series.occurrences === 1 ? "" : "s"} since {formatDate(series.first_seen)}
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-4">
-        <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-          {formatCurrency(series.expected_amount)}
-        </span>
-        <button
-          onClick={() => onToggleMute(series)}
-          disabled={busy}
-          className="rounded-md px-3 py-1 text-xs font-medium disabled:opacity-60"
-          style={{ border: "1px solid var(--border)", color: "var(--text-secondary)" }}
-        >
+        <span className="tabular text-sm font-semibold text-text-primary">{formatCurrency(series.expected_amount)}</span>
+        <Button size="sm" onClick={() => onToggleMute(series)} disabled={busy}>
           {series.is_muted ? "Unmute" : "Mute"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -96,15 +74,20 @@ export default function RecurringPage() {
   const [allSeries, setAllSeries] = useState<RecurringSeries[]>([]);
   const [totalMonthlyCost, setTotalMonthlyCost] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const { showToast } = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const res = await recurringApi.list();
       setAllSeries(res.series);
       setTotalMonthlyCost(res.total_monthly_cost);
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -117,8 +100,11 @@ export default function RecurringPage() {
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      await recurringApi.refresh();
+      const res = await recurringApi.refresh();
+      showToast(`Re-scanned: ${res.active} active, ${res.inactive} inactive.`, "success");
       await load();
+    } catch {
+      showToast("Refresh failed.", "error");
     } finally {
       setRefreshing(false);
     }
@@ -129,6 +115,8 @@ export default function RecurringPage() {
     try {
       await recurringApi.setMuted(series.id, !series.is_muted);
       await load();
+    } catch {
+      showToast("Failed to update mute state.", "error");
     } finally {
       setBusyId(null);
     }
@@ -141,53 +129,63 @@ export default function RecurringPage() {
     (a, b) => new Date(a.next_due_date).getTime() - new Date(b.next_due_date).getTime()
   );
 
-  if (loading) {
-    return <p style={{ color: "var(--text-muted)" }}>Loading recurring charges…</p>;
-  }
-
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-          Recurring charges
-        </h1>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="rounded-md px-4 py-2 text-sm font-medium disabled:opacity-60"
-          style={{ border: "1px solid var(--border)", color: "var(--text-secondary)" }}
-        >
-          {refreshing ? "Refreshing…" : "Re-scan transactions"}
-        </button>
-      </div>
+      <PageHeader
+        title="Recurring charges"
+        action={
+          <Button onClick={handleRefresh} loading={refreshing}>
+            {!refreshing && Icon.refresh({ size: 14 })}
+            Re-scan transactions
+          </Button>
+        }
+      />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatTile label="Active subscriptions & bills" value={String(active.length)} />
-        <StatTile label="Total monthly cost" value={formatCurrency(totalMonthlyCost)} />
-      </div>
-
-      <Card title="Upcoming, soonest first">
-        {upcoming.length === 0 ? (
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            Nothing detected yet. Sync transactions or run the seed script, then re-scan.
-          </p>
-        ) : (
-          <div className="flex flex-col">
-            {upcoming.map((s) => (
-              <SeriesRow key={s.id} series={s} onToggleMute={handleToggleMute} busy={busyId === s.id} />
-            ))}
+      {loading ? (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <StatTileSkeleton />
+            <StatTileSkeleton />
           </div>
-        )}
-      </Card>
-
-      {(muted.length > 0 || inactive.length > 0) && (
-        <Card title="Muted & inactive">
-          <div className="flex flex-col">
-            {[...muted, ...inactive].map((s) => (
-              <SeriesRow key={s.id} series={s} onToggleMute={handleToggleMute} busy={busyId === s.id} />
-            ))}
-          </div>
+          <CardSkeleton lines={5} />
+        </>
+      ) : error ? (
+        <Card>
+          <ErrorState onRetry={load} />
         </Card>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <StatTile label="Active subscriptions & bills" value={String(active.length)} />
+            <StatTile label="Total monthly cost" value={formatCurrency(totalMonthlyCost)} />
+          </div>
+
+          <Card title="Upcoming, soonest first">
+            {upcoming.length === 0 ? (
+              <EmptyState
+                icon="repeat"
+                title="Nothing detected yet"
+                description="Sync transactions or run the seed script, then re-scan."
+              />
+            ) : (
+              <div className="flex flex-col">
+                {upcoming.map((s) => (
+                  <SeriesRow key={s.id} series={s} onToggleMute={handleToggleMute} busy={busyId === s.id} />
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {(muted.length > 0 || inactive.length > 0) && (
+            <Card title="Muted & inactive">
+              <div className="flex flex-col">
+                {[...muted, ...inactive].map((s) => (
+                  <SeriesRow key={s.id} series={s} onToggleMute={handleToggleMute} busy={busyId === s.id} />
+                ))}
+              </div>
+            </Card>
+          )}
+        </>
       )}
     </div>
   );

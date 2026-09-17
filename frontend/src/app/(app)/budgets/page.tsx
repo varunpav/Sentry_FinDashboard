@@ -1,28 +1,49 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { type Budget, budgetsApi } from "@/lib/api";
 import { EXPENSE_CATEGORIES } from "@/lib/categories";
-import { formatCategoryLabel } from "@/lib/format";
+import { currentMonth, formatCategoryLabel, formatCurrency, formatMonthLabel } from "@/lib/format";
 import { Card } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Meter } from "@/components/ui/Meter";
+import { Button } from "@/components/ui/Button";
+import { Input, Select } from "@/components/ui/Field";
+import { EmptyState, ErrorState } from "@/components/ui/EmptyState";
+import { CardSkeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
+
+function projectedSpendFor(month: string, spent: number): number | undefined {
+  if (month !== currentMonth()) return undefined;
+  const now = new Date();
+  const daysElapsed = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  if (daysElapsed <= 0) return spent;
+  return (spent / daysElapsed) * daysInMonth;
+}
 
 export default function BudgetsPage() {
+  const [month, setMonth] = useState(currentMonth());
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
   const [limit, setLimit] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
-      setBudgets(await budgetsApi.list());
+      setBudgets(await budgetsApi.list(month));
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [month]);
 
   useEffect(() => {
     load();
@@ -32,17 +53,19 @@ export default function BudgetsPage() {
     e.preventDefault();
     const parsedLimit = Number(limit);
     if (!parsedLimit || parsedLimit <= 0) {
-      setError("Enter a monthly limit greater than 0.");
+      setFormError("Enter a monthly limit greater than 0.");
       return;
     }
-    setError(null);
+    setFormError(null);
     setSaving(true);
     try {
+      // PUT /budgets always returns spent: 0.0 — never trust that field, refetch instead.
       await budgetsApi.upsert(category, parsedLimit);
       setLimit("");
+      showToast(`Saved budget for ${formatCategoryLabel(category)}.`, "success");
       await load();
     } catch {
-      setError("Failed to save budget.");
+      showToast("Failed to save budget.", "error");
     } finally {
       setSaving(false);
     }
@@ -51,80 +74,78 @@ export default function BudgetsPage() {
   const budgetedCategories = new Set(budgets.map((b) => b.category));
   const availableCategories = EXPENSE_CATEGORIES.filter((c) => !budgetedCategories.has(c));
 
+  const totals = useMemo(() => {
+    const spent = budgets.reduce((sum, b) => sum + b.spent, 0);
+    const limitSum = budgets.reduce((sum, b) => sum + b.monthly_limit, 0);
+    return { spent, limit: limitSum };
+  }, [budgets]);
+
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-        Budgets
-      </h1>
+      <PageHeader title="Budgets" action={<Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />} />
 
       <Card title="Set a monthly budget">
         <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-            Category
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="rounded-md px-3 py-2 text-sm"
-              style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-            >
-              {(availableCategories.includes(category) ? availableCategories : [category, ...availableCategories]).map((c) => (
+          <Select
+            label="Category"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            wrapperClassName="w-48"
+          >
+            {(availableCategories.includes(category) ? availableCategories : [category, ...availableCategories]).map(
+              (c) => (
                 <option key={c} value={c}>
                   {formatCategoryLabel(c)}
                 </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-            Monthly limit
-            <input
-              type="number"
-              min={1}
-              step="0.01"
-              value={limit}
-              onChange={(e) => setLimit(e.target.value)}
-              placeholder="500"
-              className="w-32 rounded-md px-3 py-2 text-sm"
-              style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-            style={{ background: "var(--series-1)" }}
-          >
-            {saving ? "Saving…" : "Save budget"}
-          </button>
+              )
+            )}
+          </Select>
+          <Input
+            label="Monthly limit"
+            type="number"
+            min={1}
+            step="0.01"
+            value={limit}
+            onChange={(e) => setLimit(e.target.value)}
+            placeholder="500"
+            wrapperClassName="w-32"
+          />
+          <Button type="submit" variant="primary" loading={saving}>
+            Save budget
+          </Button>
         </form>
-        {error && (
-          <p className="mt-2 text-sm" style={{ color: "var(--status-critical)" }}>
-            {error}
-          </p>
-        )}
+        {formError && <p className="mt-2 text-sm text-status-critical">{formError}</p>}
       </Card>
 
-      <Card title="This month">
-        {loading ? (
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            Loading…
-          </p>
-        ) : budgets.length === 0 ? (
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            No budgets set yet. Add one above.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-5">
-            {budgets.map((b) => (
-              <li key={b.id}>
-                <p className="mb-2 text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                  {formatCategoryLabel(b.category)}
-                </p>
-                <Meter spent={b.spent} limit={b.monthly_limit} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      {loading ? (
+        <CardSkeleton lines={4} />
+      ) : error ? (
+        <Card>
+          <ErrorState onRetry={load} />
+        </Card>
+      ) : (
+        <Card
+          title={formatMonthLabel(month)}
+          subtitle={
+            budgets.length > 0
+              ? `${formatCurrency(totals.spent)} spent of ${formatCurrency(totals.limit)} budgeted`
+              : undefined
+          }
+        >
+          {budgets.length === 0 ? (
+            <EmptyState icon="piggyBank" title="No budgets set for this month" description="Add one above to start tracking a category." />
+          ) : (
+            <ul className="flex flex-col gap-5">
+              {budgets.map((b) => (
+                <li key={b.id}>
+                  <p className="mb-2 text-sm font-medium text-text-primary">{formatCategoryLabel(b.category)}</p>
+                  <Meter spent={b.spent} limit={b.monthly_limit} projected={projectedSpendFor(month, b.spent)} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
     </div>
   );
 }
